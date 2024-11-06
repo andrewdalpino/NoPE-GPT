@@ -1,20 +1,34 @@
 import time
 import random
-from os import path
+import warnings
+from os import path, environ
 from argparse import ArgumentParser
+from contextlib import nullcontext
 
 import torch
 
 from torch.utils.data import DataLoader
 from torch.optim import AdamW
 from torch.amp import autocast
-from torch.cuda import is_available as cuda_is_available, is_bf16_supported
+from torch.cuda import set_device, is_available as cuda_is_available, is_bf16_supported
 from torch.nn.utils import clip_grad_norm_
+from torch.nn.parallel import DistributedDataParallel
+from torch.distributed import init_process_group, destroy_process_group
 
 from torchmetrics.text import Perplexity
 
 from model import GPT
 from data import OpenwebtextDataset
+
+RANK = int(environ.get("RANK", -1))
+LOCAL_RANK = int(environ.get("LOCAL_RANK", -1))
+WORLD_SIZE = int(environ.get("WORLD_SIZE", -1))
+
+IS_DDP = RANK >= 0
+
+IS_MASTER = not IS_DDP or RANK == 0
+
+DDP_BACKEND = "gloo"
 
 
 def main():
@@ -66,6 +80,20 @@ def main():
     if "cuda" in args.device and not cuda_is_available():
         raise RuntimeError("Cuda is not available.")
 
+    if IS_DDP:
+        init_process_group(backend=DDP_BACKEND, world_size=WORLD_SIZE)
+
+        args.device = f"cuda:{LOCAL_RANK}"
+
+        set_device(args.device)
+
+        if args.gradient_accumulation_steps % WORLD_SIZE != 0:
+            warnings.warn(
+                "Gradient accumulation steps does not divide equally into the world size."
+            )
+
+        args.gradient_accumulation_steps //= WORLD_SIZE
+
     dtype = (
         torch.bfloat16
         if args.device == "cuda" and is_bf16_supported()
@@ -110,14 +138,14 @@ def main():
 
     model = GPT(**model_args).to(args.device)
 
+    print(f"Model has {model.num_trainable_params:,} trainable parameters")
+
     optimizer = AdamW(model.parameters(), lr=args.learning_rate, fused=True)
 
     perplexity_metric = Perplexity(ignore_index=-1).to(args.device)
 
     print("Compiling model")
     model = torch.compile(model)
-
-    print(f"Model has {model.num_trainable_params:,} trainable parameters")
 
     if args.resume:
         checkpoint = torch.load(
@@ -128,6 +156,9 @@ def main():
         optimizer.load_state_dict(checkpoint["optimizer"])
 
         print("Previous checkpoint resumed successfully")
+
+    if IS_DDP:
+        model = DistributedDataParallel(model, device_ids=[LOCAL_RANK])
 
     model.train()
 
@@ -148,7 +179,12 @@ def main():
 
                 loss /= args.gradient_accumulation_steps
 
-            loss.backward()
+            with (
+                model.no_sync()
+                if IS_DDP and step != args.gradient_accumulation_steps
+                else nullcontext()
+            ):
+                loss.backward()
 
             total_cross_entropy += loss.item()
 
@@ -174,7 +210,7 @@ def main():
             f"Gradient Norm: {average_gradient_norm:.4f}, Duration: {duration:,.2f} seconds",
         )
 
-        if epoch % args.eval_epochs == 0:
+        if epoch % args.eval_epochs == 0 and IS_MASTER:
             model.eval()
 
             start = time.time()
@@ -204,7 +240,7 @@ def main():
 
             model.train()
 
-        if epoch % args.checkpoint_epochs == 0:
+        if epoch % args.checkpoint_epochs == 0 and IS_MASTER:
             checkpoint = {
                 "model": model.state_dict(),
                 "optimizer": optimizer.state_dict(),
@@ -214,6 +250,9 @@ def main():
             torch.save(checkpoint, args.checkpoint_path)
 
             print("Checkpoint saved")
+
+    if IS_DDP:
+        destroy_process_group()
 
 
 if __name__ == "__main__":

@@ -22,7 +22,7 @@ class OpenwebtextDataset(IterableDataset):
     TRAIN_FILENAME = "train.bin"
     TEST_FILENAME = "test.bin"
 
-    TEST_SPLIT_PROPORTION = 0.001
+    TEST_SPLIT_PROPORTION = 0.0015
 
     ENCODING = "gpt2"
     VOCABULARY_SIZE = 50257
