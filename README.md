@@ -49,7 +49,7 @@ python train.py --embedding_dimensions=1024 --num_hidden_layers=24 --batch_size=
 To distribute the training workload over a cluster of GPUs or multiple cluster nodes, use PyTorch's [torchrun](https://pytorch.org/docs/stable/elastic/run.html) extension to launch a distributed data parallel session.
 
 ```
-torchrun train.py --batch_size=16 --gradient_accumulation_steps=32
+torchrun --standalone --nnodes=1 --nproc-per-node=8 train.py --batch_size=16 --gradient_accumulation_steps=32
 ```
 
 > Note that when training in data-parallel mode it's important that the `gradient_accumulation_steps` divides evenly into the world size for maximum performance. For example, if we have an 8 GPU cluster, we could perform 32 gradient accumulation steps in exactly 4 passes over the network.
