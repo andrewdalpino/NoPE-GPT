@@ -1,6 +1,6 @@
 # GPT
 
-A Generative Pre-trained Transformer (GPT) model trained on Openwebtext to generate text when prompted using PyTorch's Distributed Data Parallel protocol for training over multiple CUDA-enabled GPU clusters. The default implementation is similar to GPT-2 by OpenAI and can be easily customized and scaled up to meet your needs and compute budget. In addition, you may incorporate your own training data alongside Openwebtext for additional pre-training samples or for fine-tuning for a specific task after pre-training.
+A Generative Pre-trained Transformer (GPT) trained on the Openwebtext dataset. The default implementation uses `r50k_base` tokenization with a network architecture similar to OpenAI's GPT series but can easily be customized and scaled up or down to meet your needs and compute budget with some parameter adjustments. In addition, you may incorporate your own training data alongside Openwebtext for additional pre-training samples or for fine-tuning for a specific task after pre-training. It also supports PyTorch's Distributed Data Parallel (DDP) protocol for training over multiple CUDA-enabled GPU clusters.
 
 ## Download the Repository
 Clone the project locally using git:
@@ -38,22 +38,26 @@ If you'd just like to start training right away, the default settings should wor
 python train.py
 ```
 
-If you have a larger system you can increase the training load by increasing the `batch_size` at runtime.
+> Note that it will take a while to download and preprocess the dataset the first time that the training script is run.
+
+If you have a larger system you can increase the training load by increasing the capacity of the network and `batch_size` at runtime.
 
 ```
-python train.py --batch_size=8
+python train.py --embedding_dimensions=1024 --num_hidden_layers=24 --batch_size=8
 ```
 
-To distribute the training workload over a cluster or multiple cluster nodes, use PyTorch's [torchrun](https://pytorch.org/docs/stable/elastic/run.html) extension to launch a distributed data parallel session. When training in data-parallel mode it's important that the `gradient_accumulation_steps` divides evenly into the world size for maximum performance. For example, if we have an 8 GPU cluster, we could perform 32 gradient accumulation steps in exactly 4 passes over the network.
+To distribute the training workload over a cluster of GPUs or multiple cluster nodes, use PyTorch's [torchrun](https://pytorch.org/docs/stable/elastic/run.html) extension to launch a distributed data parallel session.
 
 ```
 torchrun train.py --batch_size=16 --gradient_accumulation_steps=32
 ```
 
+> Note that when training in data-parallel mode it's important that the `gradient_accumulation_steps` divides evenly into the world size for maximum performance. For example, if we have an 8 GPU cluster, we could perform 32 gradient accumulation steps in exactly 4 passes over the network.
+
 After training, you can generate text from the model by running the `generate.py` script from the commandline with a prompt.
 
 ```
-python generate.py --prompt="When something is important enough, you should do it even if the odds are not in your favor."
+python generate.py --prompt="When something is important enough"
 ```
 
 ### Training Parameters
@@ -64,11 +68,16 @@ python generate.py --prompt="When something is important enough, you should do i
 | --gradient_accumulation_steps | 32 | int | The number of batches to pass through the network before updating the weights. |
 | --max_samples_per_epoch | 4096 | int | The maximum number of training samples to pass through the network every epoch. |
 | --learning_rate | 5e-4 | float | The global step size taken after every gradient accumulation step. |
+| --dropout | 0.1 | float | The proportion of signals to send to zero during training as regularization. |
 | --max_gradient_norm | 1.0 | float | Clip gradients above this threshold before stepping. |
 | --num_epochs | 1000 | int | The number of epochs to train for. |
 | --eval_epochs | 10 | int | Evaluate the model after this many epochs on the testing set. |
+| --block_size | 1024 | int | The number of tokens within the context window for every sample. |
+| --embedding_dimensions | 768 | int | The dimensionality of the token embeddings. |
+| --num_attention_heads | 12 | int | The number of attention heads within every block. |
+| --num_hidden_layers | 12 | int | The number of attention/MLP blocks within the hidden layer of the network. |
 | --checkpoint_epochs | 20 | int | Save the model parameters to disk every this many epochs. |
-| --checkpoint_path | "./out/ckpt.pt" | string | The path to the checkpoint file on disk. |
+| --checkpoint_path | "./out/checkpoint.pt" | string | The path to the checkpoint file on disk. |
 | --dataset_path | "./dataset" | string | The path to the dataset files on disk. |
 | --num_dataset_processes | 4 | int | The number of processes (CPUs) to use to process the dataset. |
 | --resume | False | bool | Should we resume training from the last checkpoint? |
@@ -81,9 +90,9 @@ python generate.py --prompt="When something is important enough, you should do i
 |---|---|---|---|
 | --prompt | "\n" | string | The text prompt that the model should complete. |
 | --max_tokens | 300 | int | The maximum number of tokens that the model should generate per sample. |
-| --temperature | 1.0 | float | The amount of regularization applies to the candidate token probabilities. |
+| --temperature | 1.0 | float | The amount of regularization applied to the candidate token probabilities. |
 | --top_k | 200 | int | Only sample from this many candidate tokens with the highest probabilities. |
-| --checkpoint_path | "./out/ckpt.pt" | string | The path to the checkpoint file on disk. |
+| --checkpoint_path | "./out/checkpoint.pt" | string | The path to the checkpoint file on disk. |
 | --device | "cuda" | string | The device to run the computation on. |
 | --seed | None | int | The seed for the random number generator . |
 

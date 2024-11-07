@@ -8,6 +8,7 @@ from torch.amp import autocast
 from torch.cuda import is_available as cuda_is_available, is_bf16_supported
 
 from model import GPT
+from data import OpenwebtextDataset
 
 import tiktoken
 
@@ -19,7 +20,7 @@ def main():
     parser.add_argument("--max_tokens", default=300, type=int)
     parser.add_argument("--temperature", default=1.0, type=float)
     parser.add_argument("--top_k", default=200, type=int)
-    parser.add_argument("--checkpoint_path", default="./out/ckpt.pt", type=str)
+    parser.add_argument("--checkpoint_path", default="./out/checkpoint.pt", type=str)
     parser.add_argument("--device", default="cuda", type=str)
     parser.add_argument("--seed", default=None, type=int)
 
@@ -55,7 +56,7 @@ def main():
 
     print("Model checkpoint loaded successfully")
 
-    tokenizer = tiktoken.get_encoding("r50k_base")
+    tokenizer = tiktoken.get_encoding(OpenwebtextDataset.ENCODING)
 
     start_ids = tokenizer.encode(args.prompt, allowed_special={"<|endoftext|>"})
 

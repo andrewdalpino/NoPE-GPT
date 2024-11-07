@@ -38,11 +38,16 @@ def main():
     parser.add_argument("--gradient_accumulation_steps", default=32, type=int)
     parser.add_argument("--max_samples_per_epoch", default=4096, type=int)
     parser.add_argument("--learning_rate", default=5e-4, type=float)
+    parser.add_argument("--dropout", default=0.1, type=float)
     parser.add_argument("--max_gradient_norm", default=1.0, type=float)
     parser.add_argument("--num_epochs", default=1000, type=int)
     parser.add_argument("--eval_epochs", default=10, type=int)
+    parser.add_argument("--block_size", default=1024, type=int)
+    parser.add_argument("--embedding_dimensions", default=768, type=int)
+    parser.add_argument("--num_attention_heads", default=12, type=int)
+    parser.add_argument("--num_hidden_layers", default=12, type=int)
     parser.add_argument("--checkpoint_epochs", default=20, type=int)
-    parser.add_argument("--checkpoint_path", default="./out/ckpt.pt", type=str)
+    parser.add_argument("--checkpoint_path", default="./out/checkpoint.pt", type=str)
     parser.add_argument("--dataset_path", default="./dataset", type=str)
     parser.add_argument("--num_dataset_processes", default=4, type=int)
     parser.add_argument("--resume", action="store_true")
@@ -114,7 +119,7 @@ def main():
     train = OpenwebtextDataset(
         root_path=args.dataset_path,
         train=True,
-        block_size=1024,
+        block_size=args.block_size,
         max_samples_per_epoch=args.max_samples_per_epoch,
         num_processes=args.num_dataset_processes,
     )
@@ -122,7 +127,7 @@ def main():
     test = OpenwebtextDataset(
         root_path=args.dataset_path,
         train=False,
-        block_size=1024,
+        block_size=args.block_size,
         max_samples_per_epoch=args.max_samples_per_epoch,
         num_processes=args.num_dataset_processes,
     )
@@ -132,11 +137,11 @@ def main():
 
     model_args = {
         "vocabulary_size": train.VOCABULARY_SIZE,
-        "embedding_dimensions": 768,
-        "block_size": 1024,
-        "num_heads": 12,
-        "num_layers": 12,
-        "dropout": 0.1,
+        "block_size": args.block_size,
+        "embedding_dimensions": args.embedding_dimensions,
+        "num_heads": args.num_attention_heads,
+        "num_layers": args.num_hidden_layers,
+        "dropout": args.dropout,
     }
 
     model = GPT(**model_args).to(args.device)
