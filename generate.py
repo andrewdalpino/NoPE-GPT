@@ -15,8 +15,8 @@ import tiktoken
 def main():
     parser = ArgumentParser(description="Inference script")
 
-    parser.add_argument("--prompt", type=str, required=True)
-    parser.add_argument("--max_tokens", default=512, type=int)
+    parser.add_argument("--prompt", default="\n", type=str)
+    parser.add_argument("--max_tokens", default=300, type=int)
     parser.add_argument("--temperature", default=1.0, type=float)
     parser.add_argument("--top_k", default=200, type=int)
     parser.add_argument("--checkpoint_path", default="./out/ckpt.pt", type=str)
@@ -55,7 +55,7 @@ def main():
 
     print("Model checkpoint loaded successfully")
 
-    tokenizer = tiktoken.get_encoding("gpt2")
+    tokenizer = tiktoken.get_encoding("r50k_base")
 
     start_ids = tokenizer.encode(args.prompt, allowed_special={"<|endoftext|>"})
 

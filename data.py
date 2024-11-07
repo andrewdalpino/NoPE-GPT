@@ -24,7 +24,7 @@ class OpenwebtextDataset(IterableDataset):
 
     TEST_SPLIT_PROPORTION = 0.0015
 
-    ENCODING = "gpt2"
+    ENCODING = "r50k_base"
     VOCABULARY_SIZE = 50257
 
     NUM_SHARDS = 1024
@@ -53,12 +53,12 @@ class OpenwebtextDataset(IterableDataset):
 
         self.tokenizer = tiktoken.get_encoding(self.ENCODING)
 
-        if not path.exists(train_path) or not path.exists(test_path):
-            self.download_and_preprocess(root_path, num_processes)
-
-        self.bin_file = path.join(
+        self.bin_file_path = path.join(
             root_path, self.TRAIN_FILENAME if train else self.TEST_FILENAME
         )
+
+        if not path.exists(train_path) or not path.exists(test_path):
+            self.download_and_preprocess(root_path, num_processes)
 
         self.block_size = block_size
         self.max_samples_per_epoch = max_samples_per_epoch
@@ -112,7 +112,7 @@ class OpenwebtextDataset(IterableDataset):
         }
 
     def __iter__(self):
-        data = np.memmap(self.bin_file, dtype=np.uint16, mode="r")
+        data = np.memmap(self.bin_file_path, dtype=np.uint16, mode="r")
 
         max_start = len(data) - (self.block_size + 1)
 

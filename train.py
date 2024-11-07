@@ -26,25 +26,25 @@ WORLD_SIZE = int(environ.get("WORLD_SIZE", -1))
 
 IS_DDP = RANK >= 0
 
-IS_MASTER = not IS_DDP or RANK == 0
+IS_MASTER = RANK == 0 or not IS_DDP
 
-DDP_BACKEND = "gloo"
+DDP_BACKEND = "nccl"  # gloo, nccl, etc.
 
 
 def main():
     parser = ArgumentParser(description="Training script")
 
-    parser.add_argument("--batch_size", default=8, type=int)
+    parser.add_argument("--batch_size", default=4, type=int)
     parser.add_argument("--gradient_accumulation_steps", default=32, type=int)
-    parser.add_argument("--max_samples_per_epoch", default=8192, type=int)
+    parser.add_argument("--max_samples_per_epoch", default=4096, type=int)
     parser.add_argument("--learning_rate", default=5e-4, type=float)
     parser.add_argument("--max_gradient_norm", default=1.0, type=float)
-    parser.add_argument("--num_epochs", default=10000, type=int)
+    parser.add_argument("--num_epochs", default=1000, type=int)
     parser.add_argument("--eval_epochs", default=10, type=int)
     parser.add_argument("--checkpoint_epochs", default=20, type=int)
-    parser.add_argument("--dataset_path", default="./dataset", type=str)
     parser.add_argument("--checkpoint_path", default="./out/ckpt.pt", type=str)
-    parser.add_argument("--num_cpus", default=8, type=int)
+    parser.add_argument("--dataset_path", default="./dataset", type=str)
+    parser.add_argument("--num_dataset_processes", default=4, type=int)
     parser.add_argument("--resume", action="store_true")
     parser.add_argument("--device", default="cuda", type=str)
     parser.add_argument("--seed", default=None, type=int)
@@ -94,6 +94,9 @@ def main():
 
         args.gradient_accumulation_steps //= WORLD_SIZE
 
+        if args.seed:
+            args.seed += RANK
+
     dtype = (
         torch.bfloat16
         if args.device == "cuda" and is_bf16_supported()
@@ -113,7 +116,7 @@ def main():
         train=True,
         block_size=1024,
         max_samples_per_epoch=args.max_samples_per_epoch,
-        num_processes=args.num_cpus,
+        num_processes=args.num_dataset_processes,
     )
 
     test = OpenwebtextDataset(
@@ -121,7 +124,7 @@ def main():
         train=False,
         block_size=1024,
         max_samples_per_epoch=args.max_samples_per_epoch,
-        num_processes=args.num_cpus,
+        num_processes=args.num_dataset_processes,
     )
 
     train_loader = DataLoader(train, batch_size=args.batch_size, pin_memory=True)
@@ -138,14 +141,14 @@ def main():
 
     model = GPT(**model_args).to(args.device)
 
-    print(f"Model has {model.num_trainable_params:,} trainable parameters")
-
     optimizer = AdamW(model.parameters(), lr=args.learning_rate, fused=True)
 
     perplexity_metric = Perplexity(ignore_index=-1).to(args.device)
 
     print("Compiling model")
     model = torch.compile(model)
+
+    print(f"Model has {model.num_trainable_params:,} trainable parameters")
 
     if args.resume:
         checkpoint = torch.load(
@@ -158,7 +161,10 @@ def main():
         print("Previous checkpoint resumed successfully")
 
     if IS_DDP:
-        model = DistributedDataParallel(model, device_ids=[LOCAL_RANK])
+        model = DistributedDataParallel(
+            model,
+            device_ids=[LOCAL_RANK],
+        )
 
     model.train()
 
