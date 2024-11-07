@@ -32,7 +32,7 @@ DDP_BACKEND = "nccl"  # gloo, nccl, etc.
 
 
 def main():
-    parser = ArgumentParser(description="Training script")
+    parser = ArgumentParser(description="Train the GPT.")
 
     parser.add_argument("--batch_size", default=4, type=int)
     parser.add_argument("--gradient_accumulation_steps", default=32, type=int)

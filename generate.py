@@ -14,7 +14,9 @@ import tiktoken
 
 
 def main():
-    parser = ArgumentParser(description="Inference script")
+    parser = ArgumentParser(
+        description="Generate text from the model given a prompt.",
+    )
 
     parser.add_argument("--prompt", default="\n", type=str)
     parser.add_argument("--max_tokens", default=300, type=int)

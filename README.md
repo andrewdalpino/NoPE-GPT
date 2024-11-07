@@ -98,8 +98,13 @@ python generate.py --prompt="When something is important enough"
 
 ## References:
 >- A. Vaswani, et al. Attention Is All You Need. 31st Conference on Neural Information Processing Systems, 2017.
->- A. Radford, et al. Language Models are Unsupervised Multitask Learners.
+>- A. Radford, et al. Language Models are Unsupervised Multitask Learners, OpenAI, 2019.
+>- T. Brown, et al. Language Models are Few-Shot Learners. OpenAI, 2020.
 >- O. Press, et. al. Using the Output Embedding to Improve Language Models.
+>- J. R. Hermans, et al. Accumulated Gradient Normalization, JMLR: Workshop and Conference Proceedings, 2017.
+>- R, Pascanu, et al. On the difficulty of training Recurrent Neural Networks, 2013.
+>- I. Loshchilov, et al. Decoupled Weight Decay Regulaization, ILCR, 2019.
+>- N. Srivastava, et al. Dropout: A Simple Way To Prevent Neural Networks from Overfitting, Journal of Machine Learning Research 15, 2014.
 
 ## License
 The code is licensed [MIT](LICENSE) and the tutorial is licensed [CC BY-NC 4.0](https://creativecommons.org/licenses/by-nc/4.0/).
