@@ -80,9 +80,11 @@ class OpenwebtextDataset(IterableDataset):
         for split, dataset in splits.items():
             filename = path.join(root_path, f"{split}.bin")
 
-            length = np.sum(dataset["length"], dtype=np.uint64)
+            total_length = np.sum(dataset["length"], dtype=np.uint64)
 
-            bin_out = np.memmap(filename, dtype=np.uint16, mode="w+", shape=length)
+            bin_out = np.memmap(
+                filename, dtype=np.uint16, mode="w+", shape=total_length
+            )
 
             index = 0
 

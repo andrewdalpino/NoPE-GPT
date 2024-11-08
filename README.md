@@ -38,7 +38,7 @@ If you'd just like to start training right away, the default settings should wor
 python train.py
 ```
 
-> Note that it will take a while to download and preprocess the dataset the first time that the training script is run.
+> Note that it will take a while to download and pre-process the dataset the first time that the training script is run.
 
 If you have a larger system you can increase the training load by increasing the capacity of the network and `batch_size` at runtime.
 

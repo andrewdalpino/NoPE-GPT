@@ -20,6 +20,8 @@ from torchmetrics.text import Perplexity
 from model import GPT
 from data import OpenwebtextDataset
 
+from tqdm import tqdm
+
 RANK = int(environ.get("RANK", -1))
 LOCAL_RANK = int(environ.get("LOCAL_RANK", -1))
 WORLD_SIZE = int(environ.get("WORLD_SIZE", -1))
@@ -85,6 +87,8 @@ def main():
     if "cuda" in args.device and not cuda_is_available():
         raise RuntimeError("Cuda is not available.")
 
+    torch.set_float32_matmul_precision("high")
+
     if IS_DDP:
         init_process_group(backend=DDP_BACKEND, world_size=WORLD_SIZE)
 
@@ -109,8 +113,6 @@ def main():
     )
 
     forward_context = autocast(device_type=args.device, dtype=dtype)
-
-    torch.set_float32_matmul_precision("high")
 
     if args.seed:
         torch.manual_seed(args.seed)
@@ -179,9 +181,9 @@ def main():
         total_cross_entropy, total_gradient_norm = 0.0, 0.0
         total_batches, total_steps = 0, 0
 
-        start = time.time()
-
-        for step, (x, y) in enumerate(train_loader, start=1):
+        for step, (x, y) in enumerate(
+            tqdm(train_loader, desc=f"Epoch {epoch}", leave=False), start=1
+        ):
             x = x.to(args.device, non_blocking=True)
             y = y.to(args.device, non_blocking=True)
 
@@ -211,22 +213,19 @@ def main():
 
             total_batches += 1
 
-        duration = time.time() - start
-
         average_cross_entropy = total_cross_entropy / total_batches
         average_gradient_norm = total_gradient_norm / total_steps
 
         print(
-            f"Epoch: {epoch}, Cross Entropy: {average_cross_entropy:.5f},",
-            f"Gradient Norm: {average_gradient_norm:.4f}, Duration: {duration:,.2f} seconds",
+            f"Epoch {epoch}:",
+            f"Cross Entropy: {average_cross_entropy:.5f},",
+            f"Gradient Norm: {average_gradient_norm:.4f}",
         )
 
         if epoch % args.eval_epochs == 0 and IS_MASTER:
             model.eval()
 
-            start = time.time()
-
-            for x, y in test_loader:
+            for x, y in tqdm(test_loader, desc="Testing", leave=False):
                 x = x.to(args.device, non_blocking=True)
                 y = y.to(args.device, non_blocking=True)
 
@@ -236,16 +235,9 @@ def main():
 
                     perplexity_metric.update(y_pred, y)
 
-            duration = time.time() - start
-
             average_perplexity = perplexity_metric.compute().item()
 
-            total_tokens = total_batches * args.batch_size * model_args["block_size"]
-            tokens_per_second = total_tokens / duration
-
-            print(
-                f"Perplexity: {average_perplexity:.4f}, Tokens/sec: {tokens_per_second:,.2f}"
-            )
+            print(f"Perplexity: {average_perplexity:.4f}")
 
             perplexity_metric.reset()
 

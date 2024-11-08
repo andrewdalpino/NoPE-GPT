@@ -19,7 +19,7 @@ def main():
     )
 
     parser.add_argument("--prompt", default="\n", type=str)
-    parser.add_argument("--max_tokens", default=300, type=int)
+    parser.add_argument("--max_tokens", default=400, type=int)
     parser.add_argument("--temperature", default=1.0, type=float)
     parser.add_argument("--top_k", default=200, type=int)
     parser.add_argument("--checkpoint_path", default="./out/checkpoint.pt", type=str)
@@ -31,6 +31,8 @@ def main():
     if "cuda" in args.device and not cuda_is_available():
         raise RuntimeError("Cuda is not available.")
 
+    torch.set_float32_matmul_precision("high")
+
     dtype = (
         torch.bfloat16
         if args.device == "cuda" and is_bf16_supported()
@@ -38,8 +40,6 @@ def main():
     )
 
     forward_context = autocast(device_type=args.device, dtype=dtype)
-
-    torch.set_float32_matmul_precision("high")
 
     if args.seed:
         torch.manual_seed(args.seed)
