@@ -18,7 +18,7 @@ from torch.distributed import init_process_group, destroy_process_group
 from torchmetrics.text import Perplexity
 
 from model import GPT
-from data import OpenwebtextDataset
+from data import Openwebtext
 
 from tqdm import tqdm
 
@@ -34,24 +34,24 @@ DDP_BACKEND = "nccl"  # gloo, nccl, etc.
 
 
 def main():
-    parser = ArgumentParser(description="Train the GPT.")
+    parser = ArgumentParser(description="Pre-train the GPT.")
 
     parser.add_argument("--batch_size", default=4, type=int)
     parser.add_argument("--gradient_accumulation_steps", default=32, type=int)
-    parser.add_argument("--max_samples_per_epoch", default=4096, type=int)
+    parser.add_argument("--samples_per_epoch", default=4096, type=int)
     parser.add_argument("--learning_rate", default=5e-4, type=float)
-    parser.add_argument("--dropout", default=0.1, type=float)
     parser.add_argument("--max_gradient_norm", default=1.0, type=float)
-    parser.add_argument("--num_epochs", default=1000, type=int)
-    parser.add_argument("--eval_epochs", default=10, type=int)
+    parser.add_argument("--dropout", default=0.1, type=float)
+    parser.add_argument("--num_epochs", default=2000, type=int)
     parser.add_argument("--block_size", default=1024, type=int)
     parser.add_argument("--embedding_dimensions", default=768, type=int)
     parser.add_argument("--num_attention_heads", default=12, type=int)
     parser.add_argument("--num_hidden_layers", default=12, type=int)
-    parser.add_argument("--checkpoint_epochs", default=20, type=int)
+    parser.add_argument("--eval_interval", default=10, type=int)
+    parser.add_argument("--checkpoint_interval", default=20, type=int)
     parser.add_argument("--checkpoint_path", default="./out/checkpoint.pt", type=str)
     parser.add_argument("--dataset_path", default="./dataset", type=str)
-    parser.add_argument("--num_dataset_processes", default=4, type=int)
+    parser.add_argument("--num_dataset_processes", default=8, type=int)
     parser.add_argument("--resume", action="store_true")
     parser.add_argument("--device", default="cuda", type=str)
     parser.add_argument("--seed", default=None, type=int)
@@ -74,14 +74,14 @@ def main():
     if args.num_epochs < 1:
         raise ValueError(f"Must train for at least 1 epoch, {args.num_epochs} given.")
 
-    if args.eval_epochs < 1:
+    if args.eval_interval < 1:
         raise ValueError(
-            f"Eval epochs must be greater than 0, {args.eval_epochs} given."
+            f"Eval interval must be greater than 0, {args.eval_interval} given."
         )
 
-    if args.checkpoint_epochs < 1:
+    if args.checkpoint_interval < 1:
         raise ValueError(
-            f"Checkpoint epochs must be greater than 0, {args.checkpoint_epochs} given."
+            f"Checkpoint interval must be greater than 0, {args.checkpoint_interval} given."
         )
 
     if "cuda" in args.device and not cuda_is_available():
@@ -118,27 +118,27 @@ def main():
         torch.manual_seed(args.seed)
         random.seed(args.seed)
 
-    train = OpenwebtextDataset(
+    training = Openwebtext(
         root_path=args.dataset_path,
         train=True,
-        block_size=args.block_size,
-        max_samples_per_epoch=args.max_samples_per_epoch,
+        tokens_per_sample=args.block_size,
+        samples_per_epoch=args.samples_per_epoch,
         num_processes=args.num_dataset_processes,
     )
 
-    test = OpenwebtextDataset(
+    testing = Openwebtext(
         root_path=args.dataset_path,
         train=False,
-        block_size=args.block_size,
-        max_samples_per_epoch=args.max_samples_per_epoch,
+        tokens_per_sample=args.block_size,
+        samples_per_epoch=args.samples_per_epoch,
         num_processes=args.num_dataset_processes,
     )
 
-    train_loader = DataLoader(train, batch_size=args.batch_size, pin_memory=True)
-    test_loader = DataLoader(test, batch_size=args.batch_size, pin_memory=True)
+    train_loader = DataLoader(training, batch_size=args.batch_size, pin_memory=True)
+    test_loader = DataLoader(testing, batch_size=args.batch_size, pin_memory=True)
 
     model_args = {
-        "vocabulary_size": train.VOCABULARY_SIZE,
+        "vocabulary_size": training.VOCABULARY_SIZE,
         "block_size": args.block_size,
         "embedding_dimensions": args.embedding_dimensions,
         "num_heads": args.num_attention_heads,
@@ -150,7 +150,7 @@ def main():
 
     optimizer = AdamW(model.parameters(), lr=args.learning_rate, fused=True)
 
-    perplexity_metric = Perplexity(ignore_index=-1).to(args.device)
+    perplexity_metric = Perplexity(ignore_index=-100).to(args.device)
 
     print("Compiling model")
     model = torch.compile(model)
@@ -168,14 +168,11 @@ def main():
         print("Previous checkpoint resumed successfully")
 
     if IS_DDP:
-        model = DistributedDataParallel(
-            model,
-            device_ids=[LOCAL_RANK],
-        )
+        model = DistributedDataParallel(model, device_ids=[LOCAL_RANK])
 
     model.train()
 
-    print("Training ...")
+    print("Pre-training ...")
 
     for epoch in range(1, args.num_epochs + 1):
         total_cross_entropy, total_gradient_norm = 0.0, 0.0
@@ -190,14 +187,14 @@ def main():
             with forward_context:
                 y_pred, loss = model(x, y)
 
-                loss /= args.gradient_accumulation_steps
+                scaled_loss = loss / args.gradient_accumulation_steps
 
             with (
                 model.no_sync()
                 if IS_DDP and step != args.gradient_accumulation_steps
                 else nullcontext()
             ):
-                loss.backward()
+                scaled_loss.backward()
 
             total_cross_entropy += loss.item()
 
@@ -222,7 +219,7 @@ def main():
             f"Gradient Norm: {average_gradient_norm:.4f}",
         )
 
-        if epoch % args.eval_epochs == 0 and IS_MASTER:
+        if epoch % args.eval_interval == 0 and IS_MASTER:
             model.eval()
 
             for x, y in tqdm(test_loader, desc="Testing", leave=False):
@@ -235,15 +232,15 @@ def main():
 
                     perplexity_metric.update(y_pred, y)
 
-            average_perplexity = perplexity_metric.compute().item()
+            perplexity = perplexity_metric.compute().item()
 
-            print(f"Perplexity: {average_perplexity:.4f}")
+            print(f"Perplexity: {perplexity:.3f}")
 
             perplexity_metric.reset()
 
             model.train()
 
-        if epoch % args.checkpoint_epochs == 0 and IS_MASTER:
+        if epoch % args.checkpoint_interval == 0 and IS_MASTER:
             checkpoint = {
                 "model": model.state_dict(),
                 "optimizer": optimizer.state_dict(),

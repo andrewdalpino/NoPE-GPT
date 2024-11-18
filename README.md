@@ -1,6 +1,6 @@
 # GPT
 
-A Generative Pre-trained Transformer (GPT) trained on the Openwebtext dataset. The default implementation uses `r50k_base` tokenization with a network architecture similar to OpenAI's GPT series but can easily be customized and scaled up or down to meet your needs and compute budget with some parameter adjustments. In addition, you may incorporate your own training data alongside Openwebtext for additional pre-training samples or for fine-tuning for a specific task after pre-training. It also supports PyTorch's Distributed Data Parallel (DDP) protocol for training over multiple CUDA-enabled GPU clusters.
+A Generative Pre-trained Transformer (GPT) trained on the Openwebtext dataset. The default implementation uses `r50k_base` BPE tokenization with a network architecture similar to OpenAI's GPT series but can easily be customized and scaled up or down to meet your needs and compute budget with some parameter adjustments. In addition, you may incorporate your own training data alongside Openwebtext for additional pre-training samples or for fine-tuning for a specific task after pre-training. It also supports PyTorch's Distributed Data Parallel (DDP) protocol for training over multiple CUDA-enabled GPU clusters.
 
 ## Download the Repository
 Clone the project locally using git:
@@ -35,7 +35,7 @@ pip install -r requirements.txt
 If you'd just like to start training right away, the default settings should work on most single-GPU systems with 12G of VRAM or more.
 
 ```
-python train.py
+python pre-train.py
 ```
 
 > Note that it will take a while to download and pre-process the dataset the first time that the training script is run.
@@ -43,13 +43,13 @@ python train.py
 If you have a larger system you can increase the training load by increasing the capacity of the network and `batch_size` at runtime.
 
 ```
-python train.py --embedding_dimensions=1024 --num_hidden_layers=24 --batch_size=8
+python pre-train.py --embedding_dimensions=1024 --num_hidden_layers=24 --batch_size=8
 ```
 
 To distribute the training workload over a cluster of GPUs or multiple cluster nodes, use PyTorch's [torchrun](https://pytorch.org/docs/stable/elastic/run.html) extension to launch a distributed data parallel session.
 
 ```
-torchrun --standalone --nnodes=1 --nproc-per-node=8 train.py --batch_size=16 --gradient_accumulation_steps=32
+torchrun --standalone --nnodes=1 --nproc-per-node=8 pre-train.py --batch_size=16 --gradient_accumulation_steps=32
 ```
 
 > Note that when training in data-parallel mode it's important that the `gradient_accumulation_steps` divides evenly into the world size for maximum performance. For example, if we have an 8 GPU cluster, we could perform 32 gradient accumulation steps in exactly 4 passes over the network.
@@ -60,7 +60,7 @@ After training, you can generate text from the model by running the `generate.py
 python generate.py --prompt="When something is important enough"
 ```
 
-### Training Parameters
+### Pre-training Parameters
 
 | Argument | Default | Type | Description |
 |---|---|---|---|
