@@ -18,7 +18,7 @@ from tqdm import tqdm
 class Openwebtext(IterableDataset):
     DATASET_NAME = "openwebtext"
 
-    FILE_PREFIX = "openwebtext"
+    FILE_PREFIX = DATASET_NAME
 
     TRAIN_FILENAME = f"{FILE_PREFIX}-train.bin"
     TEST_FILENAME = f"{FILE_PREFIX}-test.bin"
@@ -178,4 +178,4 @@ class Alpaca(Dataset):
         return x, y
 
     def __len__(self):
-        return int(0.05 * len(self.dataset))
+        return len(self.dataset)

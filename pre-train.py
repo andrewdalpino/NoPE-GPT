@@ -150,7 +150,7 @@ def main():
 
     optimizer = AdamW(model.parameters(), lr=args.learning_rate, fused=True)
 
-    perplexity_metric = Perplexity(ignore_index=-100).to(args.device)
+    perplexity_metric = Perplexity(ignore_index=training.PADDING_INDEX).to(args.device)
 
     print("Compiling model")
     model = torch.compile(model)

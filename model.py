@@ -28,7 +28,6 @@ class GPT(Module):
     """A generative pre-trained transformer."""
 
     EOS_INDEX = 50256
-
     PADDING_INDEX = 50257
 
     def __init__(
