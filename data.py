@@ -170,7 +170,7 @@ class Alpaca(Dataset):
         x = torch.tensor(tokens[0 : end - 1], dtype=torch.int64)
         y = torch.tensor(tokens[1:end], dtype=torch.int64)
 
-        delta = self.max_tokens_per_sample - len(tokens)
+        delta = (1 + self.max_tokens_per_sample) - end
 
         x = pad(x, (0, delta), "constant", self.PADDING_INDEX)
         y = pad(y, (0, delta), "constant", self.PADDING_INDEX)
