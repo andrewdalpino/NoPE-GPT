@@ -18,7 +18,6 @@ def main():
         description="Generate text from the model given a prompt.",
     )
 
-    parser.add_argument("--prompt", required=True, type=str)
     parser.add_argument("--checkpoint_path", default="./out/checkpoint.pt", type=str)
     parser.add_argument("--lora_path", default=None, type=str)
     parser.add_argument("--max_tokens", default=500, type=int)
@@ -45,6 +44,8 @@ def main():
     if args.seed:
         torch.manual_seed(args.seed)
         random.seed(args.seed)
+
+    tokenizer = tiktoken.get_encoding(Openwebtext.ENCODING)
 
     checkpoint = torch.load(
         args.checkpoint_path, map_location=args.device, weights_only=True
@@ -75,15 +76,19 @@ def main():
 
     model.eval()
 
-    tokenizer = tiktoken.get_encoding(Openwebtext.ENCODING)
+    prompt = input("Enter a prompt: ")
 
-    start_ids = tokenizer.encode_ordinary(args.prompt)
+    if args.lora_path:
+        instruction = prompt
+
+        prompt = "Below is an instruction that describes a task."
+        prompt += "Write a response that appropriately completes the request.\n\n"
+        prompt += f"### Instruction:\n{instruction}\n\n"
+        prompt += "### Response:\n"
+
+    start_ids = tokenizer.encode_ordinary(prompt)
 
     prompt = torch.tensor(start_ids, dtype=torch.int64, device=args.device)
-
-    print("Generating ...")
-
-    print(args.prompt, end="")
 
     with forward_context:
         for token in model.generate(

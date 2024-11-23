@@ -19,7 +19,7 @@ from torch.nn import (
 )
 
 from torch.nn.functional import softmax
-from torch.nn.init import normal_
+from torch.nn.utils.parametrize import register_parametrization, remove_parametrizations
 
 from typing import Iterator
 
@@ -147,9 +147,9 @@ class GPT(Module):
 
             y_pred, _ = self.forward(context_window.unsqueeze(0))
 
-            y_pred = y_pred[:, -1, :].squeeze(0)
+            logits = y_pred[0, -1, :]
 
-            logits, indices = torch.topk(y_pred, top_k, sorted=False)
+            logits, indices = torch.topk(logits, top_k, sorted=False)
 
             logits /= temperature
 
@@ -164,10 +164,9 @@ class GPT(Module):
 
             yield next_token
 
-            if i < max_tokens:
-                new_context = next_token.unsqueeze(0)
+            new_context = next_token.unsqueeze(0)
 
-                context_window = torch.cat((context_window, new_context))
+            context_window = torch.cat((context_window, new_context))
 
 
 class CausalSelfAttentionBlock(Module):
@@ -197,8 +196,8 @@ class CausalSelfAttentionBlock(Module):
             embedding_dimensions,
             num_heads,
             batch_first=True,
-            bias=False,
             dropout=dropout,
+            bias=False,
         )
 
         self.norm2 = LayerNorm(embedding_dimensions, bias=False)
@@ -261,11 +260,40 @@ class GPTWithLoRA(Module):
             param.requires_grad = False
 
         for module in model.body:
+            register_parametrization(
+                module.attention.out_proj,
+                "weight",
+                LoRA(
+                    module.attention.out_proj.weight.shape[1],
+                    module.attention.out_proj.weight.shape[0],
+                    rank,
+                    alpha,
+                ),
+            )
+
             for i, layer in enumerate(module.mlp.layers):
                 if isinstance(layer, Linear):
-                    module.mlp.layers[i] = LoRALinear(layer, rank, alpha)
+                    register_parametrization(
+                        layer,
+                        "weight",
+                        LoRA(
+                            layer.weight.shape[1],
+                            layer.weight.shape[0],
+                            rank,
+                            alpha,
+                        ),
+                    ),
 
-        model.output_layer = LoRALinear(model.output_layer, rank, alpha)
+        register_parametrization(
+            model.output_layer,
+            "weight",
+            LoRA(
+                model.output_layer.weight.shape[1],
+                model.output_layer.weight.shape[0],
+                rank,
+                alpha,
+            ),
+        ),
 
         self.model = model
 
@@ -280,6 +308,16 @@ class GPTWithLoRA(Module):
             if "lora" in name
         }
 
+    def merge_parameters(self) -> GPT:
+        """Merge the LoRA parameters with the original parameters."""
+
+        for module in self.model.modules():
+            if hasattr(module, "parametrizations"):
+                for name in module.parametrizations.keys():
+                    remove_parametrizations(module, name, leave_parametrized=True)
+
+        return self.model
+
     def forward(
         self, x: Tensor, y: Tensor | None = None
     ) -> tuple[Tensor, Tensor | None]:
@@ -291,22 +329,8 @@ class GPTWithLoRA(Module):
         return self.model.generate(prompts, max_tokens, temperature, top_k)
 
 
-class LoRALinear(Module):
-    """Adapter layer for injecting LoRA into linear layers."""
-
-    def __init__(self, linear: Linear, rank: int, alpha: float):
-        super().__init__()
-
-        self.linear = linear
-
-        self.lora = LoRA(linear.in_features, linear.out_features, rank, alpha)
-
-    def forward(self, x: Tensor) -> Tensor:
-        return self.linear(x) + self.lora(x)
-
-
 class LoRA(Module):
-    """Rank decomposition layer."""
+    """Rank decomposition transformation."""
 
     def __init__(self, in_features: int, out_features: int, rank: int, alpha: float):
         super().__init__()
@@ -329,14 +353,14 @@ class LoRA(Module):
 
         std_dev = 1.0 / sqrt(rank)
 
-        self.a = Parameter(torch.randn(in_features, rank) * std_dev)
-        self.b = Parameter(torch.zeros(rank, out_features))
+        self.a = Parameter(torch.randn(rank, in_features) * std_dev)
+        self.b = Parameter(torch.zeros(out_features, rank))
 
         self.alpha = alpha
 
     def forward(self, x: Tensor) -> Tensor:
-        z = x @ self.a @ self.b
+        z = self.b @ self.a
 
         z *= self.alpha
 
-        return z
+        return x + z

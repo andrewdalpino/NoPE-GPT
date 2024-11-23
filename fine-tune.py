@@ -1,5 +1,7 @@
 import random
+
 from argparse import ArgumentParser
+from functools import partial
 
 import torch
 
@@ -27,12 +29,12 @@ def main():
     parser.add_argument("--batch_size", default=4, type=int)
     parser.add_argument("--gradient_accumulation_steps", default=16, type=int)
     parser.add_argument("--learning_rate", default=5e-4, type=float)
-    parser.add_argument("--rank", default=16, type=int)
+    parser.add_argument("--rank", default=8, type=int)
     parser.add_argument("--alpha", default=1.0, type=float)
     parser.add_argument("--max_gradient_norm", default=1.0, type=float)
-    parser.add_argument("--num_epochs", default=2, type=int)
+    parser.add_argument("--num_epochs", default=20, type=int)
     parser.add_argument("--eval_epochs", default=1, type=int)
-    parser.add_argument("--checkpoint_epochs", default=1, type=int)
+    parser.add_argument("--checkpoint_epochs", default=2, type=int)
     parser.add_argument("--checkpoint_path", default="./out/lora.pt", type=str)
     parser.add_argument("--resume", action="store_true")
     parser.add_argument("--device", default="cuda", type=str)
@@ -67,8 +69,19 @@ def main():
 
     training, testing = random_split(dataset, [0.9, 0.1])
 
-    train_loader = DataLoader(training, batch_size=args.batch_size, pin_memory=True)
-    test_loader = DataLoader(testing, batch_size=args.batch_size, pin_memory=True)
+    train_loader = DataLoader(
+        training,
+        collate_fn=dataset.collate,
+        batch_size=args.batch_size,
+        pin_memory=True,
+    )
+
+    test_loader = DataLoader(
+        testing,
+        collate_fn=dataset.collate,
+        batch_size=args.batch_size,
+        pin_memory=True,
+    )
 
     model = GPT(**model_args)
 

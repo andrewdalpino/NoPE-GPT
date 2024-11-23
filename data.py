@@ -10,7 +10,7 @@ import numpy as np
 import torch
 
 from torch.utils.data import IterableDataset, Dataset
-from torch.nn.functional import pad
+from torch.nn.utils.rnn import pad_sequence
 
 from tqdm import tqdm
 
@@ -39,7 +39,7 @@ class Openwebtext(IterableDataset):
         train: bool = True,
         tokens_per_sample: int = 1024,
         samples_per_epoch: int = 8192,
-        num_processes: int = 4,
+        num_processes: int = 8,
     ):
         super().__init__()
 
@@ -158,6 +158,32 @@ class Alpaca(Dataset):
 
         self.max_tokens_per_sample = max_tokens_per_sample
 
+    @classmethod
+    def collate(cls, batch: list):
+        """Custom collate function adds padding to batched samples."""
+
+        samples, labels = [], []
+
+        for x, y in batch:
+            samples.append(x)
+            labels.append(y)
+
+        samples = pad_sequence(
+            samples,
+            batch_first=True,
+            padding_value=cls.PADDING_INDEX,
+            padding_side="left",
+        )
+
+        labels = pad_sequence(
+            labels,
+            batch_first=True,
+            padding_value=cls.PADDING_INDEX,
+            padding_side="left",
+        )
+
+        return samples, labels
+
     def __getitem__(self, index: int):
         sample = self.dataset[index]
 
@@ -169,11 +195,6 @@ class Alpaca(Dataset):
 
         x = torch.tensor(tokens[0 : end - 1], dtype=torch.int64)
         y = torch.tensor(tokens[1:end], dtype=torch.int64)
-
-        delta = (1 + self.max_tokens_per_sample) - end
-
-        x = pad(x, (0, delta), "constant", self.PADDING_INDEX)
-        y = pad(y, (0, delta), "constant", self.PADDING_INDEX)
 
         return x, y
 
