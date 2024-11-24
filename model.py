@@ -21,14 +21,11 @@ from torch.nn import (
 from torch.nn.functional import softmax
 from torch.nn.utils.parametrize import register_parametrization, remove_parametrizations
 
-from typing import Iterator
+from typing import Iterator, Self
 
 
 class GPT(Module):
     """A generative pre-trained transformer."""
-
-    EOS_INDEX = 50256
-    PADDING_INDEX = 50257
 
     def __init__(
         self,
@@ -38,6 +35,8 @@ class GPT(Module):
         num_heads: int,
         num_layers: int,
         dropout: float,
+        padding_index: int = 50257,
+        eos_index: int = 50256,
     ):
         super().__init__()
 
@@ -50,7 +49,7 @@ class GPT(Module):
             raise ValueError(f"Num layers must be greater than 0, {num_layers} given.")
 
         token_embeddings = Embedding(
-            vocabulary_size, embedding_dimensions, padding_idx=self.PADDING_INDEX
+            vocabulary_size, embedding_dimensions, padding_idx=padding_index
         )
 
         positional_embeddings = Embedding(block_size, embedding_dimensions)
@@ -81,10 +80,11 @@ class GPT(Module):
         self.positions = Buffer(positions, persistent=False)
         self.causal_mask = Buffer(causal_mask, persistent=False)
 
-        self.loss_function = CrossEntropyLoss(ignore_index=self.PADDING_INDEX)
+        self.loss_function = CrossEntropyLoss(ignore_index=padding_index)
 
         self.vocabulary_size = vocabulary_size
         self.block_size = block_size
+        self.eos_index = eos_index
 
     @property
     def num_trainable_params(self) -> int:
@@ -151,7 +151,8 @@ class GPT(Module):
 
             logits, indices = torch.topk(logits, top_k, sorted=False)
 
-            logits /= temperature
+            if temperature != 1.0:
+                logits /= temperature
 
             probabilities = softmax(logits, dim=-1)
 
@@ -159,14 +160,15 @@ class GPT(Module):
 
             next_token = indices[offset]
 
-            if next_token == self.EOS_INDEX:
+            if next_token == self.eos_index:
                 break
 
             yield next_token
 
-            new_context = next_token.unsqueeze(0)
+            if i < max_tokens:
+                new_context = next_token.unsqueeze(0)
 
-            context_window = torch.cat((context_window, new_context))
+                context_window = torch.cat([context_window, new_context])
 
 
 class CausalSelfAttentionBlock(Module):
@@ -263,12 +265,7 @@ class GPTWithLoRA(Module):
             register_parametrization(
                 module.attention.out_proj,
                 "weight",
-                LoRA(
-                    module.attention.out_proj.weight.shape[1],
-                    module.attention.out_proj.weight.shape[0],
-                    rank,
-                    alpha,
-                ),
+                LoRA.from_linear(module.attention.out_proj, rank, alpha),
             )
 
             for i, layer in enumerate(module.mlp.layers):
@@ -276,23 +273,13 @@ class GPTWithLoRA(Module):
                     register_parametrization(
                         layer,
                         "weight",
-                        LoRA(
-                            layer.weight.shape[1],
-                            layer.weight.shape[0],
-                            rank,
-                            alpha,
-                        ),
+                        LoRA.from_linear(layer, rank, alpha),
                     ),
 
         register_parametrization(
             model.output_layer,
             "weight",
-            LoRA(
-                model.output_layer.weight.shape[1],
-                model.output_layer.weight.shape[0],
-                rank,
-                alpha,
-            ),
+            LoRA.from_linear(model.output_layer, rank, alpha),
         ),
 
         self.model = model
@@ -325,12 +312,18 @@ class GPTWithLoRA(Module):
 
     def generate(
         self, prompts: Tensor, max_tokens: int, temperature: float, top_k: int
-    ) -> Tensor:
+    ) -> Iterator:
         return self.model.generate(prompts, max_tokens, temperature, top_k)
 
 
 class LoRA(Module):
     """Rank decomposition transformation."""
+
+    @classmethod
+    def from_linear(cls, linear: Linear, rank: int, alpha: float) -> Self:
+        out_features, in_features = linear.weight.shape
+
+        return cls(in_features, out_features, rank, alpha)
 
     def __init__(self, in_features: int, out_features: int, rank: int, alpha: float):
         super().__init__()

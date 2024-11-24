@@ -33,8 +33,8 @@ def main():
     parser.add_argument("--alpha", default=1.0, type=float)
     parser.add_argument("--max_gradient_norm", default=1.0, type=float)
     parser.add_argument("--num_epochs", default=20, type=int)
-    parser.add_argument("--eval_epochs", default=1, type=int)
-    parser.add_argument("--checkpoint_epochs", default=2, type=int)
+    parser.add_argument("--eval_interval", default=1, type=int)
+    parser.add_argument("--checkpoint_interval", default=2, type=int)
     parser.add_argument("--checkpoint_path", default="./out/lora.pt", type=str)
     parser.add_argument("--resume", action="store_true")
     parser.add_argument("--device", default="cuda", type=str)
@@ -73,14 +73,13 @@ def main():
         training,
         collate_fn=dataset.collate,
         batch_size=args.batch_size,
-        pin_memory=True,
+        pin_memory="cpu" not in args.device,
     )
-
     test_loader = DataLoader(
         testing,
         collate_fn=dataset.collate,
         batch_size=args.batch_size,
-        pin_memory=True,
+        pin_memory="cpu" not in args.device,
     )
 
     model = GPT(**model_args)
@@ -163,7 +162,7 @@ def main():
             f"Gradient Norm: {average_gradient_norm:.4f}",
         )
 
-        if epoch % args.eval_epochs == 0:
+        if epoch % args.eval_interval == 0:
             model.eval()
 
             for x, y in tqdm(test_loader, desc="Testing", leave=False):
@@ -184,7 +183,7 @@ def main():
 
             model.train()
 
-        if epoch % args.checkpoint_epochs == 0:
+        if epoch % args.checkpoint_interval == 0:
             checkpoint = {
                 "lora": model.state_dict(),
                 "optimizer": optimizer.state_dict(),

@@ -27,9 +27,10 @@ class Openwebtext(IterableDataset):
 
     ENCODING = "r50k_base"
 
-    VOCABULARY_SIZE = 50258
-
     PADDING_INDEX = 50257
+    EOS_INDEX = 50256
+
+    VOCABULARY_SIZE = 50258
 
     NUM_SHARDS = 1024
 
@@ -54,55 +55,54 @@ class Openwebtext(IterableDataset):
 
         self.tokenizer = tiktoken.get_encoding(self.ENCODING)
 
+        if not path.exists(train_path) or not path.exists(test_path):
+            dataset = load_dataset(
+                self.DATASET_NAME, num_proc=num_processes, split="train"
+            )
+
+            splits = dataset.train_test_split(
+                test_size=self.TEST_SPLIT_PROPORTION, shuffle=True
+            )
+
+            splits = splits.map(
+                self.tokenize,
+                desc="Tokenizing",
+                remove_columns=["text"],
+                num_proc=num_processes,
+            )
+
+            for split, dataset in splits.items():
+                filename = path.join(root_path, f"{self.FILE_PREFIX}-{split}.bin")
+
+                total_length = np.sum(dataset["length"], dtype=np.uint64)
+
+                bin_out = np.memmap(
+                    filename, dtype=np.uint16, mode="w+", shape=total_length
+                )
+
+                index = 0
+
+                for i in tqdm(range(self.NUM_SHARDS), desc="Writing"):
+                    batch = dataset.shard(
+                        num_shards=self.NUM_SHARDS, index=i, contiguous=True
+                    ).with_format("numpy")
+
+                    token_batch = np.concatenate(batch["tokens"])
+
+                    n = len(token_batch)
+
+                    bin_out[index : index + n] = token_batch
+
+                    index += n
+
+                bin_out.flush()
+
         self.tokens_per_sample = tokens_per_sample
         self.samples_per_epoch = samples_per_epoch
 
         self.bin_file_path = path.join(
             root_path, self.TRAIN_FILENAME if train else self.TEST_FILENAME
         )
-
-        if not path.exists(train_path) or not path.exists(test_path):
-            self.download_and_preprocess(root_path, num_processes)
-
-    def download_and_preprocess(self, root_path: str, num_processes: int) -> None:
-        dataset = load_dataset(self.DATASET_NAME, num_proc=num_processes, split="train")
-
-        splits = dataset.train_test_split(
-            test_size=self.TEST_SPLIT_PROPORTION, shuffle=True
-        )
-
-        splits = splits.map(
-            self.tokenize,
-            desc="Tokenizing",
-            remove_columns=["text"],
-            num_proc=num_processes,
-        )
-
-        for split, dataset in splits.items():
-            filename = path.join(root_path, f"{self.FILE_PREFIX}-{split}.bin")
-
-            total_length = np.sum(dataset["length"], dtype=np.uint64)
-
-            bin_out = np.memmap(
-                filename, dtype=np.uint16, mode="w+", shape=total_length
-            )
-
-            index = 0
-
-            for i in tqdm(range(self.NUM_SHARDS), desc="Writing"):
-                batch = dataset.shard(
-                    num_shards=self.NUM_SHARDS, index=i, contiguous=True
-                ).with_format("numpy")
-
-                token_batch = np.concatenate(batch["tokens"])
-
-                n = len(token_batch)
-
-                bin_out[index : index + n] = token_batch
-
-                index += n
-
-            bin_out.flush()
 
     def tokenize(self, sample: dict) -> dict:
         tokens = self.tokenizer.encode_ordinary(sample["text"])
@@ -129,6 +129,8 @@ class Openwebtext(IterableDataset):
             x = x.astype(np.int64)
             y = y.astype(np.int64)
 
+            assert x.shape == y.shape, "Sample / label shape mismatch."
+
             yield x, y
 
 
@@ -137,9 +139,26 @@ class Alpaca(Dataset):
 
     ENCODING = "r50k_base"
 
+    PADDING_INDEX = 50257
+    EOS_INDEX = 50256
+
     VOCABULARY_SIZE = 50258
 
-    PADDING_INDEX = 50257
+    PROMPT_TEMPLATE = (
+        "Below is an instruction that describes a task. Write a response that "
+        "appropriately completes the request.\n\n"
+        "### Instruction:\n{instruction}\n\n"
+        "### Response:\n"
+    )
+
+    PROMPT_TEMPLATE_WITH_INPUT = (
+        "Below is an instruction that describes a task, paired with an input "
+        "that provides further context. Write a response that appropriately "
+        "completes the request.\n\n"
+        "### Input:\n{input}\n\n"
+        "### Instruction:\n{instruction}\n\n"
+        "### Response:\n"
+    )
 
     def __init__(
         self,
@@ -160,7 +179,7 @@ class Alpaca(Dataset):
 
     @classmethod
     def collate(cls, batch: list):
-        """Custom collate function adds padding to batched samples."""
+        """Custom collate function adds left padding to batched samples."""
 
         samples, labels = [], []
 
@@ -168,33 +187,54 @@ class Alpaca(Dataset):
             samples.append(x)
             labels.append(y)
 
-        samples = pad_sequence(
+        x = pad_sequence(
             samples,
             batch_first=True,
             padding_value=cls.PADDING_INDEX,
             padding_side="left",
         )
-
-        labels = pad_sequence(
+        y = pad_sequence(
             labels,
             batch_first=True,
             padding_value=cls.PADDING_INDEX,
             padding_side="left",
         )
 
-        return samples, labels
+        assert x.shape == y.shape, "Sample / label batch shape mismatch."
+
+        return x, y
 
     def __getitem__(self, index: int):
-        sample = self.dataset[index]
+        row = self.dataset[index]
 
-        tokens = self.tokenizer.encode_ordinary(sample["text"])
+        has_input = len(row["input"]) > 0
 
-        tokens.append(self.tokenizer.eot_token)
+        if not has_input:
+            text = self.PROMPT_TEMPLATE.format(instruction=row["instruction"])
 
-        end = min(len(tokens), self.max_tokens_per_sample)
+        else:
+            text = self.PROMPT_TEMPLATE_WITH_INPUT.format(
+                input=row["input"], instruction=row["instruction"]
+            )
 
-        x = torch.tensor(tokens[0 : end - 1], dtype=torch.int64)
-        y = torch.tensor(tokens[1:end], dtype=torch.int64)
+        tokens = self.tokenizer.encode_ordinary(text)
+
+        sample = tokens
+        label = [self.PADDING_INDEX] * len(tokens)
+
+        tokens = self.tokenizer.encode_ordinary(row["output"])
+
+        tokens.append(self.EOS_INDEX)
+
+        sample.extend(tokens)
+        label.extend(tokens)
+
+        end = min(len(sample), self.max_tokens_per_sample)
+
+        x = torch.tensor(sample[0 : end - 1], dtype=torch.int64)
+        y = torch.tensor(label[1:end], dtype=torch.int64)
+
+        assert x.shape == y.shape, "Sample / label shape mismatch."
 
         return x, y
 

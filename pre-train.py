@@ -125,7 +125,6 @@ def main():
         samples_per_epoch=args.samples_per_epoch,
         num_processes=args.num_dataset_processes,
     )
-
     testing = Openwebtext(
         root_path=args.dataset_path,
         train=False,
@@ -134,8 +133,12 @@ def main():
         num_processes=args.num_dataset_processes,
     )
 
-    train_loader = DataLoader(training, batch_size=args.batch_size, pin_memory=True)
-    test_loader = DataLoader(testing, batch_size=args.batch_size, pin_memory=True)
+    train_loader = DataLoader(
+        training, batch_size=args.batch_size, pin_memory="cpu" not in args.device
+    )
+    test_loader = DataLoader(
+        testing, batch_size=args.batch_size, pin_memory="cpu" not in args.device
+    )
 
     model_args = {
         "vocabulary_size": training.VOCABULARY_SIZE,
@@ -144,6 +147,8 @@ def main():
         "num_heads": args.num_attention_heads,
         "num_layers": args.num_hidden_layers,
         "dropout": args.dropout,
+        "padding_index": training.PADDING_INDEX,
+        "eos_index": training.EOS_INDEX,
     }
 
     model = GPT(**model_args).to(args.device)

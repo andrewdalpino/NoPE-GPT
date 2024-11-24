@@ -8,7 +8,7 @@ from torch.amp import autocast
 from torch.cuda import is_available as cuda_is_available, is_bf16_supported
 
 from model import GPT, GPTWithLoRA
-from data import Openwebtext
+from data import Openwebtext, Alpaca
 
 import tiktoken
 
@@ -79,16 +79,11 @@ def main():
     prompt = input("Enter a prompt: ")
 
     if args.lora_path:
-        instruction = prompt
+        prompt = Alpaca.PROMPT_TEMPLATE.format(instruction=prompt)
 
-        prompt = "Below is an instruction that describes a task."
-        prompt += "Write a response that appropriately completes the request.\n\n"
-        prompt += f"### Instruction:\n{instruction}\n\n"
-        prompt += "### Response:\n"
+    prompt = tokenizer.encode_ordinary(prompt)
 
-    start_ids = tokenizer.encode_ordinary(prompt)
-
-    prompt = torch.tensor(start_ids, dtype=torch.int64, device=args.device)
+    prompt = torch.tensor(prompt, dtype=torch.int64, device=args.device)
 
     with forward_context:
         for token in model.generate(
