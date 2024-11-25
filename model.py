@@ -262,13 +262,21 @@ class GPTWithLoRA(Module):
             param.requires_grad = False
 
         for module in model.body:
+            out_features, in_features = module.attention.in_proj_weight.shape
+
+            register_parametrization(
+                module.attention,
+                "in_proj_weight",
+                LoRA(in_features, out_features, rank, alpha),
+            )
+
             register_parametrization(
                 module.attention.out_proj,
                 "weight",
                 LoRA.from_linear(module.attention.out_proj, rank, alpha),
             )
 
-            for i, layer in enumerate(module.mlp.layers):
+            for layer in module.mlp.layers:
                 if isinstance(layer, Linear):
                     register_parametrization(
                         layer,
@@ -341,7 +349,7 @@ class LoRA(Module):
         if rank <= 0:
             raise ValueError(f"Rank must be greater than 0, {rank} given.")
 
-        if alpha < 0.0:
+        if alpha <= 0.0:
             raise ValueError(f"Alpha must be greater than 0, {alpha} given.")
 
         std_dev = 1.0 / sqrt(rank)

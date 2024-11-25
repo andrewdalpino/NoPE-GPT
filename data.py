@@ -107,7 +107,7 @@ class Openwebtext(IterableDataset):
     def tokenize(self, sample: dict) -> dict:
         tokens = self.tokenizer.encode_ordinary(sample["text"])
 
-        tokens.append(self.tokenizer.eot_token)
+        tokens.append(self.EOS_INDEX)
 
         return {
             "tokens": tokens,

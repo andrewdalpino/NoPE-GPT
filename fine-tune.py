@@ -1,7 +1,6 @@
 import random
 
 from argparse import ArgumentParser
-from functools import partial
 
 import torch
 
@@ -9,7 +8,6 @@ from torch.utils.data import DataLoader
 from torch.optim import AdamW
 from torch.amp import autocast
 from torch.cuda import is_available as cuda_is_available, is_bf16_supported
-from torch.nn.utils import clip_grad_norm_
 from torch.utils.data import random_split
 
 from torchmetrics.text import Perplexity
@@ -27,14 +25,13 @@ def main():
 
     parser.add_argument("--base_model_path", default="./out/checkpoint.pt", type=str)
     parser.add_argument("--batch_size", default=4, type=int)
-    parser.add_argument("--gradient_accumulation_steps", default=16, type=int)
+    parser.add_argument("--gradient_accumulation_steps", default=32, type=int)
     parser.add_argument("--learning_rate", default=5e-4, type=float)
     parser.add_argument("--rank", default=8, type=int)
-    parser.add_argument("--alpha", default=1.0, type=float)
-    parser.add_argument("--max_gradient_norm", default=1.0, type=float)
-    parser.add_argument("--num_epochs", default=20, type=int)
+    parser.add_argument("--alpha", default=2.0, type=float)
+    parser.add_argument("--num_epochs", default=3, type=int)
     parser.add_argument("--eval_interval", default=1, type=int)
-    parser.add_argument("--checkpoint_interval", default=2, type=int)
+    parser.add_argument("--checkpoint_interval", default=1, type=int)
     parser.add_argument("--checkpoint_path", default="./out/lora.pt", type=str)
     parser.add_argument("--resume", action="store_true")
     parser.add_argument("--device", default="cuda", type=str)
@@ -123,8 +120,7 @@ def main():
     print("Fine-tuning ...")
 
     for epoch in range(1, args.num_epochs + 1):
-        total_cross_entropy, total_gradient_norm = 0.0, 0.0
-        total_batches, total_steps = 0, 0
+        total_cross_entropy, total_batches = 0.0, 0
 
         for step, (x, y) in enumerate(
             tqdm(train_loader, desc=f"Epoch {epoch}", leave=False), start=1
@@ -142,24 +138,16 @@ def main():
             total_cross_entropy += loss.item()
 
             if step % args.gradient_accumulation_steps == 0:
-                norm = clip_grad_norm_(model.parameters(), args.max_gradient_norm)
-
                 optimizer.step()
 
                 optimizer.zero_grad(set_to_none=True)
 
-                total_gradient_norm += norm.item()
-                total_steps += 1
-
             total_batches += 1
 
         average_cross_entropy = total_cross_entropy / total_batches
-        average_gradient_norm = total_gradient_norm / total_steps
 
         print(
-            f"Epoch {epoch}:",
-            f"Cross Entropy: {average_cross_entropy:.5f},",
-            f"Gradient Norm: {average_gradient_norm:.4f}",
+            f"Epoch {epoch}: Cross Entropy: {average_cross_entropy:.5f}",
         )
 
         if epoch % args.eval_interval == 0:
@@ -175,7 +163,7 @@ def main():
 
                     perplexity_metric.update(y_pred, y)
 
-            perplexity = perplexity_metric.compute().item()
+            perplexity = perplexity_metric.compute()
 
             print(f"Perplexity: {perplexity:.4f}")
 

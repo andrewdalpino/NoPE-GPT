@@ -8,7 +8,7 @@ from torch.amp import autocast
 from torch.cuda import is_available as cuda_is_available, is_bf16_supported
 
 from model import GPT, GPTWithLoRA
-from data import Openwebtext, Alpaca
+from data import Alpaca
 
 import tiktoken
 
@@ -21,8 +21,8 @@ def main():
     parser.add_argument("--checkpoint_path", default="./out/checkpoint.pt", type=str)
     parser.add_argument("--lora_path", default=None, type=str)
     parser.add_argument("--max_tokens", default=500, type=int)
-    parser.add_argument("--temperature", default=1.0, type=float)
-    parser.add_argument("--top_k", default=100, type=int)
+    parser.add_argument("--temperature", default=0.8, type=float)
+    parser.add_argument("--top_k", default=20, type=int)
     parser.add_argument("--device", default="cuda", type=str)
     parser.add_argument("--seed", default=None, type=int)
 
@@ -45,7 +45,7 @@ def main():
         torch.manual_seed(args.seed)
         random.seed(args.seed)
 
-    tokenizer = tiktoken.get_encoding(Openwebtext.ENCODING)
+    tokenizer = tiktoken.get_encoding(Alpaca.ENCODING)
 
     checkpoint = torch.load(
         args.checkpoint_path, map_location=args.device, weights_only=True

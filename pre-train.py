@@ -1,6 +1,8 @@
-import time
+import sys
 import random
+import signal
 import warnings
+
 from os import path, environ
 from argparse import ArgumentParser
 from contextlib import nullcontext
@@ -42,7 +44,7 @@ def main():
     parser.add_argument("--learning_rate", default=5e-4, type=float)
     parser.add_argument("--max_gradient_norm", default=1.0, type=float)
     parser.add_argument("--dropout", default=0.1, type=float)
-    parser.add_argument("--num_epochs", default=2000, type=int)
+    parser.add_argument("--num_epochs", default=2144, type=int)
     parser.add_argument("--block_size", default=1024, type=int)
     parser.add_argument("--embedding_dimensions", default=768, type=int)
     parser.add_argument("--num_attention_heads", default=12, type=int)
@@ -175,6 +177,8 @@ def main():
     if IS_DDP:
         model = DistributedDataParallel(model, device_ids=[LOCAL_RANK])
 
+    signal.signal(signal.SIGTERM, on_sigterm)
+
     model.train()
 
     print("Pre-training ...")
@@ -237,7 +241,7 @@ def main():
 
                     perplexity_metric.update(y_pred, y)
 
-            perplexity = perplexity_metric.compute().item()
+            perplexity = perplexity_metric.compute()
 
             print(f"Perplexity: {perplexity:.3f}")
 
@@ -246,6 +250,8 @@ def main():
             model.train()
 
         if epoch % args.checkpoint_interval == 0 and IS_MASTER:
+            model = model.module if IS_DDP else model
+
             checkpoint = {
                 "model": model.state_dict(),
                 "optimizer": optimizer.state_dict(),
@@ -258,6 +264,15 @@ def main():
 
     if IS_DDP:
         destroy_process_group()
+
+
+def on_sigterm(signum, frame):
+    print("Hold on, attempting to exit gracefully.")
+
+    if IS_DDP:
+        destroy_process_group()
+
+    sys.exit(0)
 
 
 if __name__ == "__main__":
