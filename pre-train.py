@@ -44,7 +44,7 @@ def main():
     parser.add_argument("--learning_rate", default=5e-4, type=float)
     parser.add_argument("--max_gradient_norm", default=1.0, type=float)
     parser.add_argument("--dropout", default=0.1, type=float)
-    parser.add_argument("--num_epochs", default=2144, type=int)
+    parser.add_argument("--num_epochs", default=2000, type=int)
     parser.add_argument("--block_size", default=1024, type=int)
     parser.add_argument("--embedding_dimensions", default=768, type=int)
     parser.add_argument("--num_attention_heads", default=12, type=int)
