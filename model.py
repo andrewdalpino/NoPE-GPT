@@ -35,8 +35,8 @@ class GPT(Module):
         num_heads: int,
         num_layers: int,
         dropout: float,
-        padding_index: int = 50257,
-        eos_index: int = 50256,
+        padding_index: int,
+        eos_index: int,
     ):
         super().__init__()
 
@@ -154,7 +154,7 @@ class GPT(Module):
             if temperature != 1.0:
                 logits /= temperature
 
-            probabilities = softmax(logits, dim=-1)
+            probabilities = softmax(logits, dim=0)
 
             offset = torch.multinomial(probabilities, num_samples=1).squeeze(0)
 
@@ -165,10 +165,9 @@ class GPT(Module):
 
             yield next_token
 
-            if i < max_tokens:
-                new_context = next_token.unsqueeze(0)
+            new_context = next_token.unsqueeze(0)
 
-                context_window = torch.cat([context_window, new_context])
+            context_window = torch.cat([context_window, new_context])
 
 
 class CausalSelfAttentionBlock(Module):

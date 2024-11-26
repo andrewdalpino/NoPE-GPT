@@ -46,7 +46,7 @@ def main():
 
     dtype = (
         torch.bfloat16
-        if args.device == "cuda" and is_bf16_supported()
+        if "cuda" in args.device and is_bf16_supported()
         else torch.float32
     )
 
@@ -71,12 +71,14 @@ def main():
         collate_fn=dataset.collate,
         batch_size=args.batch_size,
         pin_memory="cpu" not in args.device,
+        shuffle=True,
     )
     test_loader = DataLoader(
         testing,
         collate_fn=dataset.collate,
         batch_size=args.batch_size,
         pin_memory="cpu" not in args.device,
+        shuffle=False,
     )
 
     model = GPT(**model_args)

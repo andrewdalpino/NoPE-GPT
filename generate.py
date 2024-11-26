@@ -1,4 +1,5 @@
 import random
+
 from os import path
 from argparse import ArgumentParser
 
@@ -21,7 +22,7 @@ def main():
     parser.add_argument("--checkpoint_path", default="./out/checkpoint.pt", type=str)
     parser.add_argument("--lora_path", default=None, type=str)
     parser.add_argument("--max_tokens", default=500, type=int)
-    parser.add_argument("--temperature", default=0.8, type=float)
+    parser.add_argument("--temperature", default=1.0, type=float)
     parser.add_argument("--top_k", default=20, type=int)
     parser.add_argument("--device", default="cuda", type=str)
     parser.add_argument("--seed", default=None, type=int)
@@ -35,7 +36,7 @@ def main():
 
     dtype = (
         torch.bfloat16
-        if args.device == "cuda" and is_bf16_supported()
+        if "cuda" in args.device and is_bf16_supported()
         else torch.float32
     )
 

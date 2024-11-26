@@ -28,7 +28,7 @@ RANK = int(environ.get("RANK", -1))
 LOCAL_RANK = int(environ.get("LOCAL_RANK", -1))
 WORLD_SIZE = int(environ.get("WORLD_SIZE", -1))
 
-IS_DDP = RANK >= 0
+IS_DDP = WORLD_SIZE > 1
 
 IS_MASTER = RANK == 0 or not IS_DDP
 
@@ -100,17 +100,22 @@ def main():
 
         if args.gradient_accumulation_steps % WORLD_SIZE != 0:
             warnings.warn(
-                "Gradient accumulation steps does not divide equally into the world size."
+                "Number of gradient accumulation steps does not"
+                "divide equally into the world size."
             )
 
         args.gradient_accumulation_steps //= WORLD_SIZE
+
+        assert (
+            args.gradient_accumulation_steps > 0
+        ), "World size is larger than the number of gradient accumulation steps."
 
         if args.seed:
             args.seed += RANK
 
     dtype = (
         torch.bfloat16
-        if args.device == "cuda" and is_bf16_supported()
+        if "cuda" in args.device and is_bf16_supported()
         else torch.float32
     )
 
@@ -198,16 +203,18 @@ def main():
 
                 scaled_loss = loss / args.gradient_accumulation_steps
 
-            with (
-                model.no_sync()
-                if IS_DDP and step != args.gradient_accumulation_steps
-                else nullcontext()
-            ):
+            sync_and_step = step % args.gradient_accumulation_steps == 0
+
+            backward_context = (
+                model.no_sync() if IS_DDP and not sync_and_step else nullcontext()
+            )
+
+            with backward_context:
                 scaled_loss.backward()
 
             total_cross_entropy += loss.item()
 
-            if step % args.gradient_accumulation_steps == 0:
+            if sync_and_step:
                 norm = clip_grad_norm_(model.parameters(), args.max_gradient_norm)
 
                 optimizer.step()

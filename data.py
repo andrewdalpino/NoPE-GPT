@@ -181,14 +181,14 @@ class Alpaca(Dataset):
     def collate(cls, batch: list):
         """Custom collate function adds left padding to batched samples."""
 
-        samples, labels = [], []
+        sample, labels = [], []
 
         for x, y in batch:
-            samples.append(x)
+            sample.append(x)
             labels.append(y)
 
         x = pad_sequence(
-            samples,
+            sample,
             batch_first=True,
             padding_value=cls.PADDING_INDEX,
             padding_side="left",
@@ -209,30 +209,30 @@ class Alpaca(Dataset):
 
         has_input = len(row["input"]) > 0
 
-        if not has_input:
-            text = self.PROMPT_TEMPLATE.format(instruction=row["instruction"])
-
-        else:
+        if has_input:
             text = self.PROMPT_TEMPLATE_WITH_INPUT.format(
                 input=row["input"], instruction=row["instruction"]
             )
 
+        else:
+            text = self.PROMPT_TEMPLATE.format(instruction=row["instruction"])
+
         tokens = self.tokenizer.encode_ordinary(text)
 
         sample = tokens
-        label = [self.PADDING_INDEX] * len(tokens)
+        labels = [self.PADDING_INDEX] * len(tokens)
 
         tokens = self.tokenizer.encode_ordinary(row["output"])
 
         tokens.append(self.EOS_INDEX)
 
         sample.extend(tokens)
-        label.extend(tokens)
+        labels.extend(tokens)
 
-        end = min(len(sample), self.max_tokens_per_sample)
+        end = min(len(sample), self.max_tokens_per_sample + 1)
 
         x = torch.tensor(sample[0 : end - 1], dtype=torch.int64)
-        y = torch.tensor(label[1:end], dtype=torch.int64)
+        y = torch.tensor(labels[1:end], dtype=torch.int64)
 
         assert x.shape == y.shape, "Sample / label shape mismatch."
 
