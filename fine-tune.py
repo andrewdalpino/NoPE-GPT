@@ -25,11 +25,11 @@ def main():
 
     parser.add_argument("--base_model_path", default="./out/checkpoint.pt", type=str)
     parser.add_argument("--batch_size", default=4, type=int)
-    parser.add_argument("--gradient_accumulation_steps", default=32, type=int)
+    parser.add_argument("--gradient_accumulation_steps", default=16, type=int)
     parser.add_argument("--learning_rate", default=5e-4, type=float)
     parser.add_argument("--rank", default=8, type=int)
-    parser.add_argument("--alpha", default=2.0, type=float)
-    parser.add_argument("--num_epochs", default=3, type=int)
+    parser.add_argument("--alpha", default=1.0, type=float)
+    parser.add_argument("--num_epochs", default=4, type=int)
     parser.add_argument("--eval_interval", default=1, type=int)
     parser.add_argument("--checkpoint_interval", default=1, type=int)
     parser.add_argument("--checkpoint_path", default="./out/lora.pt", type=str)
@@ -100,6 +100,8 @@ def main():
 
     perplexity_metric = Perplexity(ignore_index=dataset.PADDING_INDEX).to(args.device)
 
+    starting_epoch = 1
+
     if args.resume:
         checkpoint = torch.load(
             args.checkpoint_path,
@@ -109,6 +111,7 @@ def main():
 
         model.load_state_dict(checkpoint["lora"], strict=False)
         optimizer.load_state_dict(checkpoint["optimizer"])
+        starting_epoch = checkpoint["epoch"]
 
         print("Previous checkpoint resumed successfully")
 
@@ -121,7 +124,7 @@ def main():
 
     print("Fine-tuning ...")
 
-    for epoch in range(1, args.num_epochs + 1):
+    for epoch in range(starting_epoch, args.num_epochs + 1):
         total_cross_entropy, total_batches = 0.0, 0
 
         for step, (x, y) in enumerate(
@@ -135,7 +138,7 @@ def main():
 
                 scaled_loss = loss / args.gradient_accumulation_steps
 
-                scaled_loss.backward()
+            scaled_loss.backward()
 
             total_cross_entropy += loss.item()
 
@@ -178,6 +181,7 @@ def main():
                 "lora": model.state_dict(),
                 "optimizer": optimizer.state_dict(),
                 "lora_args": lora_args,
+                "epoch": epoch,
             }
 
             torch.save(checkpoint, args.checkpoint_path)

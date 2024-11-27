@@ -252,7 +252,7 @@ class MLP(Module):
 
 
 class GPTWithLoRA(Module):
-    """A LoRA wrapper for pre-trained models."""
+    """A wrapper for pre-trained models that applies LoRA to the intermediate layers of the network."""
 
     def __init__(self, model: GPT, rank: int, alpha: float):
         super().__init__()
@@ -272,7 +272,7 @@ class GPTWithLoRA(Module):
             register_parametrization(
                 module.attention.out_proj,
                 "weight",
-                LoRA.from_linear(module.attention.out_proj, rank, alpha),
+                LoRA(in_features, out_features, rank, alpha),
             )
 
             for layer in module.mlp.layers:
@@ -282,12 +282,6 @@ class GPTWithLoRA(Module):
                         "weight",
                         LoRA.from_linear(layer, rank, alpha),
                     ),
-
-        register_parametrization(
-            model.output_layer,
-            "weight",
-            LoRA.from_linear(model.output_layer, rank, alpha),
-        ),
 
         self.model = model
 

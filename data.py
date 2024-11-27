@@ -76,6 +76,8 @@ class Openwebtext(IterableDataset):
 
                 total_length = np.sum(dataset["length"], dtype=np.uint64)
 
+                print(total_length)
+
                 bin_out = np.memmap(
                     filename, dtype=np.uint16, mode="w+", shape=total_length
                 )

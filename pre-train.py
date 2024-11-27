@@ -44,7 +44,7 @@ def main():
     parser.add_argument("--learning_rate", default=5e-4, type=float)
     parser.add_argument("--max_gradient_norm", default=1.0, type=float)
     parser.add_argument("--dropout", default=0.1, type=float)
-    parser.add_argument("--num_epochs", default=2000, type=int)
+    parser.add_argument("--num_epochs", default=2145, type=int)
     parser.add_argument("--block_size", default=1024, type=int)
     parser.add_argument("--embedding_dimensions", default=768, type=int)
     parser.add_argument("--num_attention_heads", default=12, type=int)
@@ -101,7 +101,7 @@ def main():
         if args.gradient_accumulation_steps % WORLD_SIZE != 0:
             warnings.warn(
                 "Number of gradient accumulation steps does not"
-                "divide equally into the world size."
+                "divide evenly into the world size."
             )
 
         args.gradient_accumulation_steps //= WORLD_SIZE
@@ -109,6 +109,18 @@ def main():
         assert (
             args.gradient_accumulation_steps > 0
         ), "World size is larger than the number of gradient accumulation steps."
+
+        if args.samples_per_epoch % WORLD_SIZE != 0:
+            warnings.warn(
+                "Number of samples per epoch does not"
+                "divide evenly into the world size."
+            )
+
+        args.samples_per_epoch //= WORLD_SIZE
+
+        assert (
+            args.samples_per_epoch > 0
+        ), "World size is larger than the number of samples per epoch."
 
         if args.seed:
             args.seed += RANK
@@ -160,6 +172,9 @@ def main():
 
     model = GPT(**model_args).to(args.device)
 
+    if IS_DDP:
+        model = DistributedDataParallel(model, device_ids=[LOCAL_RANK])
+
     optimizer = AdamW(model.parameters(), lr=args.learning_rate, fused=True)
 
     perplexity_metric = Perplexity(ignore_index=training.PADDING_INDEX).to(args.device)
@@ -169,6 +184,8 @@ def main():
 
     print(f"Model has {model.num_trainable_params:,} trainable parameters")
 
+    starting_epoch = 1
+
     if args.resume:
         checkpoint = torch.load(
             args.checkpoint_path, map_location=args.device, weights_only=True
@@ -176,19 +193,17 @@ def main():
 
         model.load_state_dict(checkpoint["model"])
         optimizer.load_state_dict(checkpoint["optimizer"])
+        starting_epoch += checkpoint["epoch"]
 
         print("Previous checkpoint resumed successfully")
 
-    if IS_DDP:
-        model = DistributedDataParallel(model, device_ids=[LOCAL_RANK])
+    model.train()
 
     signal.signal(signal.SIGTERM, on_sigterm)
 
-    model.train()
-
     print("Pre-training ...")
 
-    for epoch in range(1, args.num_epochs + 1):
+    for epoch in range(starting_epoch, args.num_epochs + 1):
         total_cross_entropy, total_gradient_norm = 0.0, 0.0
         total_batches, total_steps = 0, 0
 
@@ -257,12 +272,11 @@ def main():
             model.train()
 
         if epoch % args.checkpoint_interval == 0 and IS_MASTER:
-            model = model.module if IS_DDP else model
-
             checkpoint = {
                 "model": model.state_dict(),
                 "optimizer": optimizer.state_dict(),
                 "model_args": model_args,
+                "epoch": epoch,
             }
 
             torch.save(checkpoint, args.checkpoint_path)
