@@ -1,6 +1,6 @@
 # GPT
 
-A Generative Pre-trained Transformer (GPT) trained on the Openwebtext dataset. The default implementation uses `r50k_base` BPE tokenization with a network architecture similar to OpenAI's GPT series but can easily be customized and scaled up or down to meet your needs and compute budget with some parameter adjustments. In addition, you may incorporate your own training data alongside Openwebtext for additional pre-training samples or for fine-tuning for a specific task after pre-training. It also supports PyTorch's Distributed Data Parallel (DDP) protocol for training over multiple CUDA-enabled GPU clusters.
+A Generative Pre-trained Transformer (GPT) trained on the Openwebtext dataset. The default implementation uses `r50k_base` BPE tokenization with a network architecture similar to OpenAI's GPT series but can easily be customized and scaled up or down to meet your needs and compute budget with some parameter adjustments. In addition, you may incorporate your own training data alongside Openwebtext for additional pre-training samples or for fine-tuning for a specific task after pre-training. It also supports PyTorch's Distributed Data Parallel (DDP) protocol for efficient training over multiple CUDA-enabled GPU clusters.
 
 ## Download the Repository
 Clone the project locally using git:
@@ -13,10 +13,6 @@ git clone https://github.com/andrewdalpino/GPT
 
 - [Python](https://www.python.org/) 3.10 or later
 - A CUDA-enabled GPU with 12G of VRAM or more
-
-## Recommended
-
-- A CUDA-enabled GPU cluster with 40G of VRAM or more
 
 ## Install Project Dependencies
 
@@ -57,46 +53,65 @@ torchrun --standalone --nnodes=1 --nproc-per-node=8 pre-train.py --batch_size=16
 After training, you can generate text from the model by running the `generate.py` script from the commandline with a prompt.
 
 ```
-python generate.py --prompt="When something is important enough"
+python generate.py
 ```
 
-### Pre-training Parameters
+### Pre-training Arguments
 
 | Argument | Default | Type | Description |
 |---|---|---|---|
 | --batch_size | 4 | int | The number of samples to pass through the network at a time. |
 | --gradient_accumulation_steps | 32 | int | The number of batches to pass through the network before updating the weights. |
-| --max_samples_per_epoch | 4096 | int | The maximum number of training samples to pass through the network every epoch. |
+| --samples_per_epoch | 4096 | int | The number of training samples to pass through the network every epoch. |
 | --learning_rate | 5e-4 | float | The global step size taken after every gradient accumulation step. |
 | --dropout | 0.1 | float | The proportion of signals to send to zero during training as regularization. |
 | --max_gradient_norm | 1.0 | float | Clip gradients above this threshold before stepping. |
-| --num_epochs | 1000 | int | The number of epochs to train for. |
-| --eval_epochs | 10 | int | Evaluate the model after this many epochs on the testing set. |
+| --num_epochs | 2145 | int | The number of epochs to train for. |
+| --eval_interval | 10 | int | Evaluate the model after this many epochs on the testing set. |
 | --block_size | 1024 | int | The number of tokens within the context window for every sample. |
 | --embedding_dimensions | 768 | int | The dimensionality of the token embeddings. |
 | --num_attention_heads | 12 | int | The number of attention heads within every block. |
 | --num_hidden_layers | 12 | int | The number of attention/MLP blocks within the hidden layer of the network. |
-| --checkpoint_epochs | 20 | int | Save the model parameters to disk every this many epochs. |
+| --checkpoint_interval | 20 | int | Save the model parameters to disk every this many epochs. |
 | --checkpoint_path | "./out/checkpoint.pt" | string | The path to the checkpoint file on disk. |
 | --dataset_path | "./dataset" | string | The path to the dataset files on disk. |
-| --num_dataset_processes | 4 | int | The number of processes (CPUs) to use to process the dataset. |
+| --num_dataset_processes | 8 | int | The number of processes (CPUs) to use to process the dataset. |
 | --resume | False | bool | Should we resume training from the last checkpoint? |
 | --device | "cuda" | string | The device to run the computation on. |
-| --seed | None | int | The seed for the random number generator . |
+| --seed | None | int | The seed for the random number generator. |
 
-### Generation Parameters
+### Fine-tuning Arguments
 
 | Argument | Default | Type | Description |
 |---|---|---|---|
-| --prompt | "\n" | string | The text prompt that the model should complete. |
-| --max_tokens | 300 | int | The maximum number of tokens that the model should generate per sample. |
+| --base_model_path | "./out/checkpoint.pt" | string | The path to the pre-trained model. |
+| --batch_size | 4 | int | The number of samples to pass through the network at a time. |
+| --mask_input | True | bool | Should we mask the input part of the sample i.e. only train on the output? |
+| --gradient_accumulation_steps | 32 | int | The number of batches to pass through the network before updating the weights. |
+| --learning_rate | 5e-4 | float | The global step size taken after every gradient accumulation step. |
+| --rank | 8 | int | The rank of the LoRA decomposition matrices. |
+| --alpha | 2.0 | float | The strength of the LoRA signal. |
+| --num_epochs | 4 | int | The number of epochs to train for. |
+| --eval_interval | 1 | int | Evaluate the model after this many epochs on the testing set. |
+| --checkpoint_interval | 1 | int | Save the model parameters to disk every this many epochs. |
+| --checkpoint_path | "./out/checkpoint.pt" | string | The path to the checkpoint file on disk. |
+| --resume | False | bool | Should we resume training from the last checkpoint? |
+| --device | "cuda" | string | The device to run the computation on. |
+| --seed | None | int | The seed for the random number generator. |
+
+### Generation Arguments
+
+| Argument | Default | Type | Description |
+|---|---|---|---|
+| --max_tokens | 500 | int | The maximum number of tokens that the model should generate per sample. |
 | --temperature | 1.0 | float | The amount of regularization applied to the candidate token probabilities. |
-| --top_k | 200 | int | Only sample from this many candidate tokens with the highest probabilities. |
+| --top_k | 20 | int | Only sample from this many candidate tokens with the highest probabilities. |
 | --checkpoint_path | "./out/checkpoint.pt" | string | The path to the checkpoint file on disk. |
 | --device | "cuda" | string | The device to run the computation on. |
-| --seed | None | int | The seed for the random number generator . |
+| --seed | None | int | The seed for the random number generator. |
 
 ## References:
+>- S. Rajbhandari, et al. ZeRO: Memory Optimizations Toward Training Trillion Parameter Models, 2020.
 >- A. Vaswani, et al. Attention Is All You Need. 31st Conference on Neural Information Processing Systems, 2017.
 >- A. Radford, et al. Language Models are Unsupervised Multitask Learners, OpenAI, 2019.
 >- T. Brown, et al. Language Models are Few-Shot Learners. OpenAI, 2020.
