@@ -165,6 +165,7 @@ class Alpaca(Dataset):
     def __init__(
         self,
         max_tokens_per_sample: int = 1024,
+        mask_input: bool = True,
     ):
         super().__init__()
 
@@ -178,6 +179,7 @@ class Alpaca(Dataset):
         self.tokenizer = tiktoken.get_encoding(self.ENCODING)
 
         self.max_tokens_per_sample = max_tokens_per_sample
+        self.mask_input = mask_input
 
     @classmethod
     def collate(cls, batch: list):
@@ -222,7 +224,12 @@ class Alpaca(Dataset):
         tokens = self.tokenizer.encode_ordinary(text)
 
         sample = tokens
-        labels = [self.PADDING_INDEX] * len(tokens)
+
+        if self.mask_input:
+            labels = [self.PADDING_INDEX] * len(tokens)
+
+        else:
+            labels = tokens
 
         tokens = self.tokenizer.encode_ordinary(row["output"])
 

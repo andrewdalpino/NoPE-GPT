@@ -16,6 +16,7 @@ from torch.cuda import set_device, is_available as cuda_is_available, is_bf16_su
 from torch.nn.utils import clip_grad_norm_
 from torch.nn.parallel import DistributedDataParallel
 from torch.distributed import init_process_group, destroy_process_group
+from torch.distributed.optim import ZeroRedundancyOptimizer
 
 from torchmetrics.text import Perplexity
 
@@ -32,7 +33,7 @@ IS_DDP = WORLD_SIZE > 1
 
 IS_MASTER = RANK == 0 or not IS_DDP
 
-DDP_BACKEND = "nccl"  # gloo, nccl, etc.
+DDP_BACKEND = "nccl"  # nccl, gloo, etc.
 
 
 def main():
@@ -175,14 +176,20 @@ def main():
     if IS_DDP:
         model = DistributedDataParallel(model, device_ids=[LOCAL_RANK])
 
-    optimizer = AdamW(model.parameters(), lr=args.learning_rate, fused=True)
-
-    perplexity_metric = Perplexity(ignore_index=training.PADDING_INDEX).to(args.device)
-
     print("Compiling model")
     model = torch.compile(model)
 
     print(f"Model has {model.num_trainable_params:,} trainable parameters")
+
+    if IS_DDP:
+        optimizer = ZeroRedundancyOptimizer(
+            model.parameters(), optimizer_class=AdamW, lr=args.learning_rate, fused=True
+        )
+
+    else:
+        optimizer = AdamW(model.parameters(), lr=args.learning_rate, fused=True)
+
+    perplexity_metric = Perplexity(ignore_index=training.PADDING_INDEX).to(args.device)
 
     starting_epoch = 1
 

@@ -269,6 +269,8 @@ class GPTWithLoRA(Module):
                 LoRA(in_features, out_features, rank, alpha),
             )
 
+            out_features, in_features = module.attention.out_proj.weight.shape
+
             register_parametrization(
                 module.attention.out_proj,
                 "weight",

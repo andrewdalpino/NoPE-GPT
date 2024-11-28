@@ -25,10 +25,11 @@ def main():
 
     parser.add_argument("--base_model_path", default="./out/checkpoint.pt", type=str)
     parser.add_argument("--batch_size", default=4, type=int)
-    parser.add_argument("--gradient_accumulation_steps", default=16, type=int)
+    parser.add_argument("--mask_input", default=True, type=bool)
+    parser.add_argument("--gradient_accumulation_steps", default=32, type=int)
     parser.add_argument("--learning_rate", default=5e-4, type=float)
     parser.add_argument("--rank", default=8, type=int)
-    parser.add_argument("--alpha", default=1.0, type=float)
+    parser.add_argument("--alpha", default=2.0, type=float)
     parser.add_argument("--num_epochs", default=4, type=int)
     parser.add_argument("--eval_interval", default=1, type=int)
     parser.add_argument("--checkpoint_interval", default=1, type=int)
@@ -62,7 +63,7 @@ def main():
 
     model_args = checkpoint["model_args"]
 
-    dataset = Alpaca(max_tokens_per_sample=model_args["block_size"])
+    dataset = Alpaca(model_args["block_size"], args.mask_input)
 
     training, testing = random_split(dataset, [0.9, 0.1])
 
@@ -96,6 +97,11 @@ def main():
 
     model = GPTWithLoRA(model, **lora_args).to(args.device)
 
+    print("Compiling model")
+    model.compile()
+
+    print(f"Model has {model.num_trainable_params:,} trainable parameters")
+
     optimizer = AdamW(model.parameters(), lr=args.learning_rate, fused=True)
 
     perplexity_metric = Perplexity(ignore_index=dataset.PADDING_INDEX).to(args.device)
@@ -111,14 +117,9 @@ def main():
 
         model.load_state_dict(checkpoint["lora"], strict=False)
         optimizer.load_state_dict(checkpoint["optimizer"])
-        starting_epoch = checkpoint["epoch"]
+        starting_epoch += checkpoint["epoch"]
 
         print("Previous checkpoint resumed successfully")
-
-    print("Compiling model")
-    model.compile()
-
-    print(f"Model has {model.num_trainable_params:,} trainable parameters")
 
     model.train()
 
