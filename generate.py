@@ -91,7 +91,9 @@ def main():
             prompt, args.max_tokens, args.temperature, args.top_k
         ):
 
-            out = tokenizer.decode([token])
+            out = tokenizer.decode_single_token_bytes(token).decode(
+                "utf-8", errors="replace"
+            )
 
             print(out, end="")
 

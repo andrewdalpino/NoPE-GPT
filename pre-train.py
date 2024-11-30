@@ -14,8 +14,8 @@ from torch.optim import AdamW
 from torch.amp import autocast
 from torch.cuda import set_device, is_available as cuda_is_available, is_bf16_supported
 from torch.nn.utils import clip_grad_norm_
-from torch.nn.parallel import DistributedDataParallel
 from torch.distributed import init_process_group, destroy_process_group
+from torch.nn.parallel import DistributedDataParallel
 from torch.distributed.optim import ZeroRedundancyOptimizer
 
 from torchmetrics.text import Perplexity

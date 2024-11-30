@@ -103,10 +103,11 @@ python generate.py
 
 | Argument | Default | Type | Description |
 |---|---|---|---|
+| --checkpoint_path | "./out/checkpoint.pt" | string | The path to the checkpoint file on disk. |
+| --lora_path | "./out/lora.pt" | string | The path to the LoRA checkpoint. |
 | --max_tokens | 500 | int | The maximum number of tokens that the model should generate per sample. |
 | --temperature | 1.0 | float | The amount of regularization applied to the candidate token probabilities. |
 | --top_k | 20 | int | Only sample from this many candidate tokens with the highest probabilities. |
-| --checkpoint_path | "./out/checkpoint.pt" | string | The path to the checkpoint file on disk. |
 | --device | "cuda" | string | The device to run the computation on. |
 | --seed | None | int | The seed for the random number generator. |
 
