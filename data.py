@@ -1,5 +1,7 @@
 import random
+
 from os import path
+from copy import deepcopy
 
 from datasets import load_dataset
 
@@ -24,22 +26,20 @@ class Openwebtext(IterableDataset):
     TEST_FILENAME = f"{FILE_PREFIX}-test.bin"
 
     TEST_SPLIT_PROPORTION = 0.005
+    NUM_SHARDS = 1024
 
     ENCODING = "r50k_base"
 
-    PADDING_INDEX = 50257
-    EOS_INDEX = 50256
+    VOCABULARY_SIZE = 50257
 
-    VOCABULARY_SIZE = 50258
-
-    NUM_SHARDS = 1024
+    PADDING_INDEX = -100
 
     def __init__(
         self,
         root_path: str,
         train: bool = True,
         tokens_per_sample: int = 1024,
-        samples_per_epoch: int = 8192,
+        samples_per_epoch: int = 4096,
         num_processes: int = 8,
     ):
         super().__init__()
@@ -56,30 +56,24 @@ class Openwebtext(IterableDataset):
         self.tokenizer = tiktoken.get_encoding(self.ENCODING)
 
         if not path.exists(train_path) or not path.exists(test_path):
-            dataset = load_dataset(
-                self.DATASET_NAME, num_proc=num_processes, split="train"
+            tokenized_splits = (
+                load_dataset(self.DATASET_NAME, num_proc=num_processes, split="train")
+                .train_test_split(test_size=self.TEST_SPLIT_PROPORTION, shuffle=True)
+                .map(
+                    self.tokenize,
+                    desc="Tokenizing",
+                    remove_columns=["text"],
+                    num_proc=num_processes,
+                )
             )
 
-            splits = dataset.train_test_split(
-                test_size=self.TEST_SPLIT_PROPORTION, shuffle=True
-            )
-
-            splits = splits.map(
-                self.tokenize,
-                desc="Tokenizing",
-                remove_columns=["text"],
-                num_proc=num_processes,
-            )
-
-            for split, dataset in splits.items():
-                filename = path.join(root_path, f"{self.FILE_PREFIX}-{split}.bin")
+            for split, dataset in tokenized_splits.items():
+                bin_path = path.join(root_path, f"{self.FILE_PREFIX}-{split}.bin")
 
                 total_length = np.sum(dataset["length"], dtype=np.uint64)
 
-                print(total_length)
-
                 bin_out = np.memmap(
-                    filename, dtype=np.uint16, mode="w+", shape=total_length
+                    bin_path, dtype=np.uint16, mode="w+", shape=total_length
                 )
 
                 index = 0
@@ -99,17 +93,21 @@ class Openwebtext(IterableDataset):
 
                 bin_out.flush()
 
-        self.tokens_per_sample = tokens_per_sample
-        self.samples_per_epoch = samples_per_epoch
-
-        self.bin_file_path = path.join(
+        bin_file_path = path.join(
             root_path, self.TRAIN_FILENAME if train else self.TEST_FILENAME
         )
+
+        memmap = np.memmap(bin_file_path, dtype=np.uint16, mode="r")
+
+        self.memmap = memmap
+        self.max_start = len(memmap) - (tokens_per_sample + 1)
+        self.tokens_per_sample = tokens_per_sample
+        self.samples_per_epoch = samples_per_epoch
 
     def tokenize(self, sample: dict) -> dict:
         tokens = self.tokenizer.encode_ordinary(sample["text"])
 
-        tokens.append(self.EOS_INDEX)
+        tokens.append(self.tokenizer.eot_token)
 
         return {
             "tokens": tokens,
@@ -117,16 +115,12 @@ class Openwebtext(IterableDataset):
         }
 
     def __iter__(self):
-        data = np.memmap(self.bin_file_path, dtype=np.uint16, mode="r")
-
-        max_start = len(data) - (self.tokens_per_sample + 1)
-
         for i in range(self.samples_per_epoch):
-            start = random.randint(0, max_start)
+            start = random.randint(0, self.max_start)
             end = start + self.tokens_per_sample
 
-            x = data[start:end]
-            y = data[start + 1 : end + 1]
+            x = self.memmap[start:end]
+            y = self.memmap[start + 1 : end + 1]
 
             x = x.astype(np.int64)
             y = y.astype(np.int64)
@@ -141,10 +135,9 @@ class Alpaca(Dataset):
 
     ENCODING = "r50k_base"
 
-    PADDING_INDEX = 50257
-    EOS_INDEX = 50256
+    VOCABULARY_SIZE = 50257
 
-    VOCABULARY_SIZE = 50258
+    PADDING_INDEX = -100
 
     PROMPT_TEMPLATE = (
         "Below is an instruction that describes a task. Write a response that "
@@ -165,7 +158,7 @@ class Alpaca(Dataset):
     def __init__(
         self,
         max_tokens_per_sample: int = 1024,
-        mask_input: bool = True,
+        mask_input: bool = False,
     ):
         super().__init__()
 
@@ -181,8 +174,7 @@ class Alpaca(Dataset):
         self.max_tokens_per_sample = max_tokens_per_sample
         self.mask_input = mask_input
 
-    @classmethod
-    def collate(cls, batch: list):
+    def collate(self, batch: list):
         """Custom collate function adds left padding to batched samples."""
 
         sample, labels = [], []
@@ -194,13 +186,13 @@ class Alpaca(Dataset):
         x = pad_sequence(
             sample,
             batch_first=True,
-            padding_value=cls.PADDING_INDEX,
+            padding_value=self.PADDING_INDEX,
             padding_side="left",
         )
         y = pad_sequence(
             labels,
             batch_first=True,
-            padding_value=cls.PADDING_INDEX,
+            padding_value=self.PADDING_INDEX,
             padding_side="left",
         )
 
@@ -217,23 +209,21 @@ class Alpaca(Dataset):
             text = self.PROMPT_TEMPLATE_WITH_INPUT.format(
                 input=row["input"], instruction=row["instruction"]
             )
-
         else:
             text = self.PROMPT_TEMPLATE.format(instruction=row["instruction"])
 
         tokens = self.tokenizer.encode_ordinary(text)
 
-        sample = tokens
+        sample = deepcopy(tokens)
 
         if self.mask_input:
             labels = [self.PADDING_INDEX] * len(tokens)
-
         else:
-            labels = tokens
+            labels = deepcopy(tokens)
 
         tokens = self.tokenizer.encode_ordinary(row["output"])
 
-        tokens.append(self.EOS_INDEX)
+        tokens.append(self.tokenizer.eot_token)
 
         sample.extend(tokens)
         labels.extend(tokens)

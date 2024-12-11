@@ -1,4 +1,6 @@
-from math import sqrt
+from math import sqrt, log, exp
+from dataclasses import dataclass, field
+from typing import Iterator, Self
 
 import torch
 
@@ -18,10 +20,9 @@ from torch.nn import (
     Buffer,
 )
 
-from torch.nn.functional import softmax
+from torch.nn.functional import softmax, log_softmax
 from torch.nn.utils.parametrize import register_parametrization, remove_parametrizations
-
-from typing import Iterator, Self
+from torch.utils.checkpoint import checkpoint_sequential
 
 
 class GPT(Module):
@@ -115,7 +116,6 @@ class GPT(Module):
             labels = y.view(-1)
 
             loss = self.loss_function(y_pred, labels)
-
         else:
             loss = None
 
@@ -123,9 +123,16 @@ class GPT(Module):
 
     @torch.no_grad()
     def generate(
-        self, prompt: Tensor, max_tokens: int, temperature: float, top_k: int
+        self,
+        prompt: Tensor,
+        max_tokens: int = 500,
+        temperature: float = 1.0,
+        top_k: int = 20,
     ) -> Iterator:
-        """Given a prompt, sample the next {max_tokens} tokens from the model."""
+        """
+        Given a prompt, sample the next {max_tokens} tokens from the model weighted
+        by their predicted probabilities.
+        """
 
         if max_tokens <= 0:
             raise ValueError(f"Max tokens must be greater than 0, {max_tokens} given.")
@@ -142,7 +149,7 @@ class GPT(Module):
 
         context_window = prompt
 
-        for i in range(max_tokens):
+        for _ in range(max_tokens):
             context_window = context_window[-self.block_size :]
 
             y_pred, _ = self.forward(context_window.unsqueeze(0))
@@ -160,14 +167,102 @@ class GPT(Module):
 
             next_token = indices[offset]
 
+            yield next_token
+
             if next_token == self.eos_index:
                 break
 
-            yield next_token
-
             new_context = next_token.unsqueeze(0)
 
-            context_window = torch.cat([context_window, new_context])
+            context_window = torch.cat((context_window, new_context))
+
+    @torch.no_grad()
+    def beam_search(
+        self,
+        prompt: Tensor,
+        max_tokens: int = 200,
+        num_candidates: int = 3,
+    ) -> list:
+        """
+        Given a prompt, return the {num_candidates} highest probability sequences.
+        """
+
+        if max_tokens <= 0:
+            raise ValueError(f"Max tokens must be greater than 0, {max_tokens} given.")
+
+        if num_candidates <= 0:
+            raise ValueError(
+                f"Num candidates must be greater than 0, {num_candidates} given."
+            )
+
+        @dataclass(order=True)
+        class Candidate:
+            log_probability: float
+            tokens: Tensor
+
+            @property
+            def priority(self) -> float:
+                return exp(self.log_probability)
+
+        candidates, completed = [], []
+
+        tokens = torch.tensor([], dtype=prompt.dtype).to(prompt.device)
+
+        candidates.append(Candidate(0.0, tokens))
+
+        while len(candidates) > 0:
+            candidate = candidates.pop()
+
+            if len(completed) >= num_candidates:
+                completed = sorted(
+                    completed, key=lambda candidate: candidate.priority, reverse=True
+                )
+
+                completed = completed[:num_candidates]
+
+                worst_completed_candidate = completed[-1]
+
+                if candidate.priority < worst_completed_candidate.priority:
+                    break
+
+            if len(candidate.tokens) > 0 and candidate.tokens[-1] == self.eos_index:
+                candidate.tokens = candidate.tokens[:-1]
+
+                completed.append(candidate)
+
+                continue
+
+            if len(candidate.tokens) >= max_tokens:
+                completed.append(candidate)
+
+                continue
+
+            context_window = torch.cat((prompt, candidate.tokens))
+
+            context_window = context_window[-self.block_size :]
+
+            y_pred, _ = self.forward(context_window.unsqueeze(0))
+
+            logits = y_pred[0, -1, :]
+
+            logits, indices = torch.topk(logits, num_candidates, sorted=False)
+
+            log_probabilities = log_softmax(logits, dim=0)
+
+            for log_probability, index in zip(log_probabilities, indices):
+                log_probability = candidate.log_probability + log_probability
+
+                tokens = torch.cat((candidate.tokens, index.unsqueeze(0)))
+
+                candidates.append(Candidate(log_probability, tokens))
+
+            candidates = sorted(
+                candidates, key=lambda candidate: candidate.priority, reverse=True
+            )
+
+            candidates = candidates[:num_candidates]
+
+        return completed
 
 
 class CausalSelfAttentionBlock(Module):
@@ -244,37 +339,37 @@ class MLP(Module):
             Linear(embedding_dimensions, hidden_dimensions, bias=False),
             GELU(),
             Linear(hidden_dimensions, embedding_dimensions, bias=False),
-            Dropout1d(dropout),
         )
 
+        self.dropout = Dropout1d(p=dropout)
+
     def forward(self, x: Tensor) -> Tensor:
-        return self.layers.forward(x)
+        return self.dropout(self.layers(x))
 
 
 class GPTWithLoRA(Module):
-    """A wrapper for pre-trained models that applies LoRA to the intermediate layers of the network."""
+    """
+    A wrapper for pre-trained GPT models that applies a LoRA
+    reparameterization to the intermediate layers of the network.
+    """
 
-    def __init__(self, model: GPT, rank: int, alpha: float):
+    def __init__(self, model: GPT, rank: int, alpha: float, dropout: float):
         super().__init__()
+
+        if rank <= 0:
+            raise ValueError(f"Rank must be greater than 0, {rank} given.")
+
+        if alpha <= 0.0:
+            raise ValueError(f"Alpha must be greater than 0, {alpha} given.")
 
         for param in model.parameters():
             param.requires_grad = False
 
         for module in model.body:
-            out_features, in_features = module.attention.in_proj_weight.shape
-
-            register_parametrization(
-                module.attention,
-                "in_proj_weight",
-                LoRA(in_features, out_features, rank, alpha),
-            )
-
-            out_features, in_features = module.attention.out_proj.weight.shape
-
             register_parametrization(
                 module.attention.out_proj,
                 "weight",
-                LoRA(in_features, out_features, rank, alpha),
+                LoRA.from_linear(module.attention.out_proj, rank, alpha, dropout),
             )
 
             for layer in module.mlp.layers:
@@ -282,7 +377,7 @@ class GPTWithLoRA(Module):
                     register_parametrization(
                         layer,
                         "weight",
-                        LoRA.from_linear(layer, rank, alpha),
+                        LoRA.from_linear(layer, rank, alpha, dropout),
                     ),
 
         self.model = model
@@ -314,32 +409,31 @@ class GPTWithLoRA(Module):
         return self.model.forward(x, y)
 
     def generate(
-        self, prompts: Tensor, max_tokens: int, temperature: float, top_k: int
+        self, prompt: Tensor, max_tokens: int, temperature: float, top_k: int
     ) -> Iterator:
-        return self.model.generate(prompts, max_tokens, temperature, top_k)
+        return self.model.generate(prompt, max_tokens, temperature, top_k)
 
 
 class LoRA(Module):
     """Rank decomposition transformation."""
 
     @classmethod
-    def from_linear(cls, linear: Linear, rank: int, alpha: float) -> Self:
+    def from_linear(
+        cls, linear: Linear, rank: int, alpha: float, dropout: float
+    ) -> Self:
         out_features, in_features = linear.weight.shape
 
-        return cls(in_features, out_features, rank, alpha)
+        return cls(in_features, out_features, rank, alpha, dropout)
 
-    def __init__(self, in_features: int, out_features: int, rank: int, alpha: float):
+    def __init__(
+        self,
+        in_features: int,
+        out_features: int,
+        rank: int,
+        alpha: float,
+        dropout: float,
+    ):
         super().__init__()
-
-        if in_features <= 0:
-            raise ValueError(
-                f"In features must be greater than 0, {in_features} given."
-            )
-
-        if out_features <= 0:
-            raise ValueError(
-                f"Out features must be greater than 0, {out_features} given."
-            )
 
         if rank <= 0:
             raise ValueError(f"Rank must be greater than 0, {rank} given.")
@@ -352,10 +446,12 @@ class LoRA(Module):
         self.a = Parameter(torch.randn(rank, in_features) * std_dev)
         self.b = Parameter(torch.zeros(out_features, rank))
 
+        self.dropout = Dropout1d(p=dropout)
+
         self.alpha = alpha
 
     def forward(self, x: Tensor) -> Tensor:
-        z = self.b @ self.a
+        z = self.b @ self.dropout(self.a)
 
         z *= self.alpha
 

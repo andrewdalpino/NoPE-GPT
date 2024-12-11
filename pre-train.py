@@ -15,8 +15,8 @@ from torch.amp import autocast
 from torch.cuda import set_device, is_available as cuda_is_available, is_bf16_supported
 from torch.nn.utils import clip_grad_norm_
 from torch.distributed import init_process_group, destroy_process_group
-from torch.nn.parallel import DistributedDataParallel
 from torch.distributed.optim import ZeroRedundancyOptimizer
+from torch.nn.parallel import DistributedDataParallel
 
 from torchmetrics.text import Perplexity
 
@@ -168,7 +168,7 @@ def main():
         "num_layers": args.num_hidden_layers,
         "dropout": args.dropout,
         "padding_index": training.PADDING_INDEX,
-        "eos_index": training.EOS_INDEX,
+        "eos_index": training.tokenizer.eot_token,
     }
 
     model = GPT(**model_args).to(args.device)
@@ -185,7 +185,6 @@ def main():
         optimizer = ZeroRedundancyOptimizer(
             model.parameters(), optimizer_class=AdamW, lr=args.learning_rate, fused=True
         )
-
     else:
         optimizer = AdamW(model.parameters(), lr=args.learning_rate, fused=True)
 
@@ -292,6 +291,8 @@ def main():
 
     if IS_DDP:
         destroy_process_group()
+
+    print("Done!")
 
 
 def on_sigterm(signum, frame):

@@ -14,6 +14,10 @@ git clone https://github.com/andrewdalpino/GPT
 - [Python](https://www.python.org/) 3.10 or later
 - A CUDA-enabled GPU with 12G of VRAM or more
 
+### Recommended
+
+- An Nvidia Ampere or later generation GPU with 12G of VRAM or more
+
 ## Install Project Dependencies
 
 Project dependencies are specified in the `requirements.txt` file. You can install them with [pip](https://pip.pypa.io/en/stable/) using the following command from the project root. I recommend using a virtual environment such as venv to keep package dependencies on your system tidy.

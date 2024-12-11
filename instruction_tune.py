@@ -21,15 +21,16 @@ from tqdm import tqdm
 
 
 def main():
-    parser = ArgumentParser(description="Fine-tune the foundation model.")
+    parser = ArgumentParser(description="Instruction-tune the foundation model.")
 
     parser.add_argument("--base_model_path", default="./out/checkpoint.pt", type=str)
     parser.add_argument("--batch_size", default=4, type=int)
-    parser.add_argument("--mask_input", default=True, type=bool)
+    parser.add_argument("--mask_input", default=False, type=bool)
     parser.add_argument("--gradient_accumulation_steps", default=32, type=int)
     parser.add_argument("--learning_rate", default=5e-4, type=float)
     parser.add_argument("--rank", default=8, type=int)
-    parser.add_argument("--alpha", default=2.0, type=float)
+    parser.add_argument("--alpha", default=1.0, type=float)
+    parser.add_argument("--dropout", default=0.05, type=float)
     parser.add_argument("--num_epochs", default=4, type=int)
     parser.add_argument("--eval_interval", default=1, type=int)
     parser.add_argument("--checkpoint_interval", default=1, type=int)
@@ -93,6 +94,7 @@ def main():
     lora_args = {
         "rank": args.rank,
         "alpha": args.alpha,
+        "dropout": args.dropout,
     }
 
     model = GPTWithLoRA(model, **lora_args).to(args.device)
@@ -171,7 +173,7 @@ def main():
 
             perplexity = perplexity_metric.compute()
 
-            print(f"Perplexity: {perplexity:.4f}")
+            print(f"Perplexity: {perplexity:.3f}")
 
             perplexity_metric.reset()
 
@@ -188,6 +190,8 @@ def main():
             torch.save(checkpoint, args.checkpoint_path)
 
             print("Checkpoint saved")
+
+    print("Done!")
 
 
 if __name__ == "__main__":

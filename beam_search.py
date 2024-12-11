@@ -21,9 +21,8 @@ def main():
 
     parser.add_argument("--checkpoint_path", default="./out/checkpoint.pt", type=str)
     parser.add_argument("--lora_path", default=None, type=str)
-    parser.add_argument("--max_tokens", default=500, type=int)
-    parser.add_argument("--temperature", default=0.8, type=float)
-    parser.add_argument("--top_k", default=20, type=int)
+    parser.add_argument("--max_tokens", default=200, type=int)
+    parser.add_argument("--num_candidates", default=3, type=int)
     parser.add_argument("--device", default="cuda", type=str)
     parser.add_argument("--seed", default=None, type=int)
 
@@ -77,27 +76,34 @@ def main():
 
     model.eval()
 
-    prompt = input("Enter a prompt: ")
+    while True:
+        prompt = input("Enter a prompt: ")
 
-    if args.lora_path:
-        prompt = Alpaca.PROMPT_TEMPLATE.format(instruction=prompt)
+        if args.lora_path:
+            prompt = Alpaca.PROMPT_TEMPLATE.format(instruction=prompt)
 
-    prompt = tokenizer.encode_ordinary(prompt)
+        prompt = tokenizer.encode_ordinary(prompt)
 
-    prompt = torch.tensor(prompt, dtype=torch.int64, device=args.device)
+        prompt = torch.tensor(prompt, dtype=torch.int64, device=args.device)
 
-    with forward_context:
-        for token in model.generate(
-            prompt, args.max_tokens, args.temperature, args.top_k
-        ):
-
-            out = tokenizer.decode_single_token_bytes(token).decode(
-                "utf-8", errors="replace"
+        with forward_context:
+            candidates = model.beam_search(
+                prompt,
+                args.max_tokens,
+                args.num_candidates,
             )
 
-            print(out, end="")
+            for i, candidate in enumerate(candidates, start=1):
+                print(f"Candidate #{i}")
 
-    print("\n")
+                out = tokenizer.decode(candidate.tokens.tolist())
+
+                print(out, end="\n\n")
+
+        print("\n")
+
+        if "n" in input("Try again (yes|no)? "):
+            break
 
 
 if __name__ == "__main__":
