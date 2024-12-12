@@ -77,27 +77,31 @@ def main():
 
     model.eval()
 
-    prompt = input("Enter a prompt: ")
+    while True:
+        prompt = input("Enter a prompt: ")
 
-    if args.lora_path:
-        prompt = Alpaca.PROMPT_TEMPLATE.format(instruction=prompt)
+        if args.lora_path:
+            prompt = Alpaca.PROMPT_TEMPLATE.format(instruction=prompt)
 
-    prompt = tokenizer.encode_ordinary(prompt)
+        prompt = tokenizer.encode_ordinary(prompt)
 
-    prompt = torch.tensor(prompt, dtype=torch.int64, device=args.device)
+        prompt = torch.tensor(prompt, dtype=torch.int64, device=args.device)
 
-    with forward_context:
-        for token in model.generate(
-            prompt, args.max_tokens, args.temperature, args.top_k
-        ):
+        with forward_context:
+            for token in model.generate(
+                prompt, args.max_tokens, args.temperature, args.top_k
+            ):
 
-            out = tokenizer.decode_single_token_bytes(token).decode(
-                "utf-8", errors="replace"
-            )
+                out = tokenizer.decode_single_token_bytes(token).decode(
+                    "utf-8", errors="replace"
+                )
 
-            print(out, end="")
+                print(out, end="")
 
-    print("\n")
+        print("\n")
+
+        if "y" not in input("Try again? (yes|no): ").lower():
+            break
 
 
 if __name__ == "__main__":

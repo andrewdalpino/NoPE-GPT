@@ -1,4 +1,4 @@
-from math import sqrt, log, exp
+from math import sqrt, exp
 from dataclasses import dataclass, field
 from typing import Iterator, Self
 
@@ -126,7 +126,7 @@ class GPT(Module):
         self,
         prompt: Tensor,
         max_tokens: int = 500,
-        temperature: float = 1.0,
+        temperature: float = 0.8,
         top_k: int = 20,
     ) -> Iterator:
         """
@@ -181,7 +181,7 @@ class GPT(Module):
         self,
         prompt: Tensor,
         max_tokens: int = 200,
-        num_candidates: int = 3,
+        num_candidates: int = 5,
     ) -> list:
         """
         Given a prompt, return the {num_candidates} highest probability sequences.
@@ -202,7 +202,15 @@ class GPT(Module):
 
             @property
             def priority(self) -> float:
+                return self.probability
+
+            @property
+            def probability(self) -> float:
                 return exp(self.log_probability)
+
+            @property
+            def length_penalty(self) -> float:
+                return 1.0 / sqrt(len(self.tokens))
 
         candidates, completed = [], []
 
@@ -263,6 +271,94 @@ class GPT(Module):
             candidates = candidates[:num_candidates]
 
         return completed
+
+
+class GPTWithLoRA(Module):
+    """
+    A wrapper for pre-trained GPT models that applies a LoRA reparameterization
+    to the intermediate layers of the network.
+    """
+
+    def __init__(self, model: GPT, rank: int, alpha: float, dropout: float):
+        super().__init__()
+
+        if rank <= 0:
+            raise ValueError(f"Rank must be greater than 0, {rank} given.")
+
+        if alpha <= 0.0:
+            raise ValueError(f"Alpha must be greater than 0, {alpha} given.")
+
+        if dropout < 0.0:
+            raise ValueError(f"Dropout must be greater than 0, {dropout} given.")
+
+        for param in model.parameters():
+            param.requires_grad = False
+
+        for module in model.body:
+            out_features, in_features = module.attention.in_proj_weight.shape
+
+            register_parametrization(
+                module.attention,
+                "in_proj_weight",
+                LoRA(in_features, out_features, rank, alpha, dropout),
+            )
+
+            out_features, in_features = module.attention.out_proj.weight.shape
+
+            register_parametrization(
+                module.attention.out_proj,
+                "weight",
+                LoRA(in_features, out_features, rank, alpha, dropout),
+            )
+
+            for layer in module.mlp.layers:
+                if isinstance(layer, Linear):
+                    register_parametrization(
+                        layer,
+                        "weight",
+                        LoRA.from_linear(layer, rank, alpha, dropout),
+                    )
+
+        self.model = model
+
+    @property
+    def num_trainable_params(self) -> int:
+        return self.model.num_trainable_params
+
+    def state_dict(self):
+        return {
+            name: module
+            for name, module in super().state_dict().items()
+            if "lora" in name
+        }
+
+    def merge_parameters(self) -> GPT:
+        """Merge the LoRA parameters with the original parameters."""
+
+        for module in self.model.modules():
+            if hasattr(module, "parametrizations"):
+                for name in module.parametrizations.keys():
+                    remove_parametrizations(module, name, leave_parametrized=True)
+
+        return self.model
+
+    def forward(
+        self, x: Tensor, y: Tensor | None = None
+    ) -> tuple[Tensor, Tensor | None]:
+        return self.model.forward(x, y)
+
+    def generate(
+        self, prompt: Tensor, max_tokens: int, temperature: float, top_k: int
+    ) -> Iterator:
+        return self.model.generate(prompt, max_tokens, temperature, top_k)
+
+    def beam_search(
+        self,
+        prompt: Tensor,
+        max_tokens: int = 200,
+        num_candidates: int = 3,
+    ) -> list:
+        return self.model.beam_search(prompt, max_tokens, num_candidates)
 
 
 class CausalSelfAttentionBlock(Module):
@@ -347,73 +443,6 @@ class MLP(Module):
         return self.dropout(self.layers(x))
 
 
-class GPTWithLoRA(Module):
-    """
-    A wrapper for pre-trained GPT models that applies a LoRA
-    reparameterization to the intermediate layers of the network.
-    """
-
-    def __init__(self, model: GPT, rank: int, alpha: float, dropout: float):
-        super().__init__()
-
-        if rank <= 0:
-            raise ValueError(f"Rank must be greater than 0, {rank} given.")
-
-        if alpha <= 0.0:
-            raise ValueError(f"Alpha must be greater than 0, {alpha} given.")
-
-        for param in model.parameters():
-            param.requires_grad = False
-
-        for module in model.body:
-            register_parametrization(
-                module.attention.out_proj,
-                "weight",
-                LoRA.from_linear(module.attention.out_proj, rank, alpha, dropout),
-            )
-
-            for layer in module.mlp.layers:
-                if isinstance(layer, Linear):
-                    register_parametrization(
-                        layer,
-                        "weight",
-                        LoRA.from_linear(layer, rank, alpha, dropout),
-                    ),
-
-        self.model = model
-
-    @property
-    def num_trainable_params(self) -> int:
-        return self.model.num_trainable_params
-
-    def state_dict(self):
-        return {
-            name: module
-            for name, module in super().state_dict().items()
-            if "lora" in name
-        }
-
-    def merge_parameters(self) -> GPT:
-        """Merge the LoRA parameters with the original parameters."""
-
-        for module in self.model.modules():
-            if hasattr(module, "parametrizations"):
-                for name in module.parametrizations.keys():
-                    remove_parametrizations(module, name, leave_parametrized=True)
-
-        return self.model
-
-    def forward(
-        self, x: Tensor, y: Tensor | None = None
-    ) -> tuple[Tensor, Tensor | None]:
-        return self.model.forward(x, y)
-
-    def generate(
-        self, prompt: Tensor, max_tokens: int, temperature: float, top_k: int
-    ) -> Iterator:
-        return self.model.generate(prompt, max_tokens, temperature, top_k)
-
-
 class LoRA(Module):
     """Rank decomposition transformation."""
 
@@ -443,15 +472,15 @@ class LoRA(Module):
 
         std_dev = 1.0 / sqrt(rank)
 
-        self.a = Parameter(torch.randn(rank, in_features) * std_dev)
-        self.b = Parameter(torch.zeros(out_features, rank))
+        self.lora_a = Parameter(torch.randn(rank, in_features) * std_dev)
+        self.lora_b = Parameter(torch.zeros(out_features, rank))
 
         self.dropout = Dropout1d(p=dropout)
 
         self.alpha = alpha
 
     def forward(self, x: Tensor) -> Tensor:
-        z = self.b @ self.dropout(self.a)
+        z = self.lora_b @ self.dropout(self.lora_a)
 
         z *= self.alpha
 

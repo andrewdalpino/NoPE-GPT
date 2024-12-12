@@ -14,10 +14,6 @@ git clone https://github.com/andrewdalpino/GPT
 - [Python](https://www.python.org/) 3.10 or later
 - A CUDA-enabled GPU with 12G of VRAM or more
 
-### Recommended
-
-- An Nvidia Ampere or later generation GPU with 12G of VRAM or more
-
 ## Install Project Dependencies
 
 Project dependencies are specified in the `requirements.txt` file. You can install them with [pip](https://pip.pypa.io/en/stable/) using the following command from the project root. I recommend using a virtual environment such as venv to keep package dependencies on your system tidy.
@@ -64,8 +60,8 @@ python generate.py
 
 | Argument | Default | Type | Description |
 |---|---|---|---|
-| --batch_size | 4 | int | The number of samples to pass through the network at a time. |
-| --gradient_accumulation_steps | 32 | int | The number of batches to pass through the network before updating the weights. |
+| --batch_size | 1 | int | The number of samples to pass through the network at a time. |
+| --gradient_accumulation_steps | 128 | int | The number of batches to pass through the network before updating the weights. |
 | --samples_per_epoch | 4096 | int | The number of training samples to pass through the network every epoch. |
 | --learning_rate | 5e-4 | float | The global step size taken after every gradient accumulation step. |
 | --dropout | 0.1 | float | The proportion of signals to send to zero during training as regularization. |
@@ -75,7 +71,7 @@ python generate.py
 | --block_size | 1024 | int | The number of tokens within the context window for every sample. |
 | --embedding_dimensions | 768 | int | The dimensionality of the token embeddings. |
 | --num_attention_heads | 12 | int | The number of attention heads within every block. |
-| --num_hidden_layers | 12 | int | The number of attention/MLP blocks within the hidden layer of the network. |
+| --num_hidden_layers | 24 | int | The number of attention/MLP blocks within the hidden layer of the network. |
 | --checkpoint_interval | 20 | int | Save the model parameters to disk every this many epochs. |
 | --checkpoint_path | "./out/checkpoint.pt" | string | The path to the checkpoint file on disk. |
 | --dataset_path | "./dataset" | string | The path to the dataset files on disk. |
@@ -89,12 +85,12 @@ python generate.py
 | Argument | Default | Type | Description |
 |---|---|---|---|
 | --base_model_path | "./out/checkpoint.pt" | string | The path to the pre-trained model. |
-| --batch_size | 4 | int | The number of samples to pass through the network at a time. |
-| --mask_input | True | bool | Should we mask the input part of the sample i.e. only train on the output? |
-| --gradient_accumulation_steps | 32 | int | The number of batches to pass through the network before updating the weights. |
+| --batch_size | 1 | int | The number of samples to pass through the network at a time. |
+| --gradient_accumulation_steps | 128 | int | The number of batches to pass through the network before updating the weights. |
 | --learning_rate | 5e-4 | float | The global step size taken after every gradient accumulation step. |
+| --mask_input | False | bool | Should we mask the input part of the sample i.e. only train on the output? |
 | --rank | 8 | int | The rank of the LoRA decomposition matrices. |
-| --alpha | 2.0 | float | The strength of the LoRA signal. |
+| --alpha | 1.0 | float | The strength of the LoRA signal. |
 | --num_epochs | 4 | int | The number of epochs to train for. |
 | --eval_interval | 1 | int | Evaluate the model after this many epochs on the testing set. |
 | --checkpoint_interval | 1 | int | Save the model parameters to disk every this many epochs. |
@@ -112,6 +108,17 @@ python generate.py
 | --max_tokens | 500 | int | The maximum number of tokens that the model should generate per sample. |
 | --temperature | 1.0 | float | The amount of regularization applied to the candidate token probabilities. |
 | --top_k | 20 | int | Only sample from this many candidate tokens with the highest probabilities. |
+| --device | "cuda" | string | The device to run the computation on. |
+| --seed | None | int | The seed for the random number generator. |
+
+### Beam Search Arguments
+
+| Argument | Default | Type | Description |
+|---|---|---|---|
+| --checkpoint_path | "./out/checkpoint.pt" | string | The path to the checkpoint file on disk. |
+| --lora_path | "./out/lora.pt" | string | The path to the LoRA checkpoint. |
+| --max_tokens | 200 | int | The maximum number of tokens that the model should generate per sample. |
+| --num_candidates | 5 | int | The number of candidate sequences to keep track of. |
 | --device | "cuda" | string | The device to run the computation on. |
 | --seed | None | int | The seed for the random number generator. |
 

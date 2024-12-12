@@ -22,7 +22,7 @@ def main():
     parser.add_argument("--checkpoint_path", default="./out/checkpoint.pt", type=str)
     parser.add_argument("--lora_path", default=None, type=str)
     parser.add_argument("--max_tokens", default=200, type=int)
-    parser.add_argument("--num_candidates", default=3, type=int)
+    parser.add_argument("--num_candidates", default=5, type=int)
     parser.add_argument("--device", default="cuda", type=str)
     parser.add_argument("--seed", default=None, type=int)
 
@@ -94,15 +94,15 @@ def main():
             )
 
             for i, candidate in enumerate(candidates, start=1):
-                print(f"Candidate #{i}")
+                print(f"#{i} ({candidate.probability:.5}):")
 
-                out = tokenizer.decode(candidate.tokens.tolist())
+                out = tokenizer.decode(candidate.tokens.tolist()).strip()
 
                 print(out, end="\n\n")
 
         print("\n")
 
-        if "n" in input("Try again (yes|no)? "):
+        if "y" not in input("Try again? (yes|no): ").lower():
             break
 
 

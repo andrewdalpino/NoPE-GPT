@@ -39,8 +39,8 @@ DDP_BACKEND = "nccl"  # nccl, gloo, etc.
 def main():
     parser = ArgumentParser(description="Pre-train the GPT.")
 
-    parser.add_argument("--batch_size", default=4, type=int)
-    parser.add_argument("--gradient_accumulation_steps", default=32, type=int)
+    parser.add_argument("--batch_size", default=1, type=int)
+    parser.add_argument("--gradient_accumulation_steps", default=128, type=int)
     parser.add_argument("--samples_per_epoch", default=4096, type=int)
     parser.add_argument("--learning_rate", default=5e-4, type=float)
     parser.add_argument("--max_gradient_norm", default=1.0, type=float)
@@ -49,7 +49,7 @@ def main():
     parser.add_argument("--block_size", default=1024, type=int)
     parser.add_argument("--embedding_dimensions", default=768, type=int)
     parser.add_argument("--num_attention_heads", default=12, type=int)
-    parser.add_argument("--num_hidden_layers", default=12, type=int)
+    parser.add_argument("--num_hidden_layers", default=24, type=int)
     parser.add_argument("--eval_interval", default=10, type=int)
     parser.add_argument("--checkpoint_interval", default=20, type=int)
     parser.add_argument("--checkpoint_path", default="./out/checkpoint.pt", type=str)
@@ -283,6 +283,7 @@ def main():
                 "optimizer": optimizer.state_dict(),
                 "model_args": model_args,
                 "epoch": epoch,
+                "seed": args.seed,
             }
 
             torch.save(checkpoint, args.checkpoint_path)

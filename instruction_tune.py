@@ -24,10 +24,10 @@ def main():
     parser = ArgumentParser(description="Instruction-tune the foundation model.")
 
     parser.add_argument("--base_model_path", default="./out/checkpoint.pt", type=str)
-    parser.add_argument("--batch_size", default=4, type=int)
-    parser.add_argument("--mask_input", default=False, type=bool)
-    parser.add_argument("--gradient_accumulation_steps", default=32, type=int)
+    parser.add_argument("--batch_size", default=1, type=int)
+    parser.add_argument("--gradient_accumulation_steps", default=128, type=int)
     parser.add_argument("--learning_rate", default=5e-4, type=float)
+    parser.add_argument("--mask_input", default=False, type=bool)
     parser.add_argument("--rank", default=8, type=int)
     parser.add_argument("--alpha", default=1.0, type=float)
     parser.add_argument("--dropout", default=0.05, type=float)
@@ -125,7 +125,7 @@ def main():
 
     model.train()
 
-    print("Fine-tuning ...")
+    print("Instruction-tuning ...")
 
     for epoch in range(starting_epoch, args.num_epochs + 1):
         total_cross_entropy, total_batches = 0.0, 0
@@ -185,6 +185,7 @@ def main():
                 "optimizer": optimizer.state_dict(),
                 "lora_args": lora_args,
                 "epoch": epoch,
+                "seed": args.seed,
             }
 
             torch.save(checkpoint, args.checkpoint_path)
