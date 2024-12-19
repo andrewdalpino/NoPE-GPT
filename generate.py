@@ -21,9 +21,10 @@ def main():
 
     parser.add_argument("--checkpoint_path", default="./out/checkpoint.pt", type=str)
     parser.add_argument("--lora_path", default=None, type=str)
-    parser.add_argument("--max_tokens", default=500, type=int)
-    parser.add_argument("--temperature", default=0.8, type=float)
-    parser.add_argument("--top_k", default=20, type=int)
+    parser.add_argument("--max_tokens", default=1000, type=int)
+    parser.add_argument("--temperature", default=1.0, type=float)
+    parser.add_argument("--top_k", default=500, type=int)
+    parser.add_argument("--top_p", default=0.9, type=float)
     parser.add_argument("--device", default="cuda", type=str)
     parser.add_argument("--seed", default=None, type=int)
 
@@ -71,6 +72,8 @@ def main():
 
         model.load_state_dict(checkpoint["lora"], strict=False)
 
+        model.merge_lora_parameters()
+
         print("LoRA checkpoint loaded")
 
     model.to(args.device)
@@ -89,14 +92,14 @@ def main():
 
         with forward_context:
             for token in model.generate(
-                prompt, args.max_tokens, args.temperature, args.top_k
+                prompt, args.max_tokens, args.temperature, args.top_k, args.top_p
             ):
 
                 out = tokenizer.decode_single_token_bytes(token).decode(
                     "utf-8", errors="replace"
                 )
 
-                print(out, end="")
+                print(out, end="", flush=True)
 
         print("\n")
 

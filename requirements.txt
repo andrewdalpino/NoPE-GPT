@@ -3,5 +3,6 @@ numpy==1.26.4
 torch==2.5.1
 torchmetrics==1.5.1
 tiktoken==0.8.0
+bs4==0.0.2
 tqdm==4.66.6
 matplotlib==3.9.2

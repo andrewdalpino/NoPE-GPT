@@ -7,6 +7,8 @@ from datasets import load_dataset
 
 import tiktoken
 
+from bs4 import BeautifulSoup
+
 import numpy as np
 
 import torch
@@ -155,11 +157,9 @@ class Alpaca(Dataset):
         "### Response:\n"
     )
 
-    def __init__(
-        self,
-        max_tokens_per_sample: int = 1024,
-        mask_input: bool = False,
-    ):
+    RESPONSE_TEMPLATE = "{output}"
+
+    def __init__(self, max_tokens_per_sample: int = 1024, mask_input: bool = True):
         super().__init__()
 
         if max_tokens_per_sample < 1:
@@ -221,7 +221,116 @@ class Alpaca(Dataset):
         else:
             labels = deepcopy(tokens)
 
-        tokens = self.tokenizer.encode_ordinary(row["output"])
+        text = self.RESPONSE_TEMPLATE.format(output=row["output"])
+
+        tokens = self.tokenizer.encode_ordinary(text)
+
+        tokens.append(self.tokenizer.eot_token)
+
+        sample.extend(tokens)
+        labels.extend(tokens)
+
+        end = min(len(sample), self.max_tokens_per_sample + 1)
+
+        x = torch.tensor(sample[0 : end - 1], dtype=torch.int64)
+        y = torch.tensor(labels[1:end], dtype=torch.int64)
+
+        assert x.shape == y.shape, "Sample / label shape mismatch."
+
+        return x, y
+
+    def __len__(self):
+        return len(self.dataset)
+
+
+class IMDB(Dataset):
+    DATASET_NAME = "stanfordnlp/imdb"
+
+    ENCODING = "r50k_base"
+
+    VOCABULARY_SIZE = 50257
+
+    PADDING_INDEX = -100
+
+    PROMPT_TEMPLATE = (
+        "What is the sentiment of this movie review?\n\n"
+        "### Review:\n{review}\n\n"
+        "### Sentiment:\n"
+    )
+
+    RESPONSE_TEMPLATE = "{sentiment}"
+
+    def __init__(
+        self,
+        max_tokens_per_sample: int = 1024,
+        train: bool = True,
+        mask_input: bool = True,
+    ):
+        super().__init__()
+
+        if max_tokens_per_sample < 1:
+            raise ValueError(
+                f"Max tokens per sample must be greater than 0, {max_tokens_per_sample} given."
+            )
+
+        split = "train" if train else "test"
+
+        self.dataset = load_dataset(self.DATASET_NAME, split=split)
+
+        self.tokenizer = tiktoken.get_encoding(self.ENCODING)
+
+        self.max_tokens_per_sample = max_tokens_per_sample
+        self.mask_input = mask_input
+
+    def collate(self, batch: list):
+        """Custom collate function adds left padding to batched samples."""
+
+        sample, labels = [], []
+
+        for x, y in batch:
+            sample.append(x)
+            labels.append(y)
+
+        x = pad_sequence(
+            sample,
+            batch_first=True,
+            padding_value=self.PADDING_INDEX,
+            padding_side="left",
+        )
+        y = pad_sequence(
+            labels,
+            batch_first=True,
+            padding_value=self.PADDING_INDEX,
+            padding_side="left",
+        )
+
+        assert x.shape == y.shape, "Sample / label batch shape mismatch."
+
+        return x, y
+
+    def __getitem__(self, index: int):
+        row = self.dataset[index]
+
+        soup = BeautifulSoup(row["text"], "html.parser")
+
+        text = self.PROMPT_TEMPLATE.format(review=soup.get_text())
+
+        tokens = self.tokenizer.encode_ordinary(text)
+
+        tokens = tokens[: self.max_tokens_per_sample - 4]  # Leave room for label tokens
+
+        sample = deepcopy(tokens)
+
+        if self.mask_input:
+            labels = [self.PADDING_INDEX] * len(tokens)
+        else:
+            labels = deepcopy(tokens)
+
+        sentiment = "Positive" if row["label"] == 1 else "Negative"
+
+        text = self.RESPONSE_TEMPLATE.format(sentiment=sentiment)
+
+        tokens = self.tokenizer.encode_ordinary(text)
 
         tokens.append(self.tokenizer.eot_token)
 

@@ -10,7 +10,7 @@ from contextlib import nullcontext
 import torch
 
 from torch.utils.data import DataLoader
-from torch.optim import AdamW
+from torch.optim import Adafactor
 from torch.amp import autocast
 from torch.cuda import set_device, is_available as cuda_is_available, is_bf16_supported
 from torch.nn.utils import clip_grad_norm_
@@ -47,8 +47,8 @@ def main():
     parser.add_argument("--dropout", default=0.1, type=float)
     parser.add_argument("--num_epochs", default=2145, type=int)
     parser.add_argument("--block_size", default=1024, type=int)
-    parser.add_argument("--embedding_dimensions", default=768, type=int)
-    parser.add_argument("--num_attention_heads", default=12, type=int)
+    parser.add_argument("--embedding_dimensions", default=1024, type=int)
+    parser.add_argument("--num_attention_heads", default=16, type=int)
     parser.add_argument("--num_hidden_layers", default=24, type=int)
     parser.add_argument("--eval_interval", default=10, type=int)
     parser.add_argument("--checkpoint_interval", default=20, type=int)
@@ -171,7 +171,7 @@ def main():
         "eos_index": training.tokenizer.eot_token,
     }
 
-    model = GPT(**model_args).to(args.device)
+    model = GPT(**model_args)
 
     if IS_DDP:
         model = DistributedDataParallel(model, device_ids=[LOCAL_RANK])
@@ -183,12 +183,10 @@ def main():
 
     if IS_DDP:
         optimizer = ZeroRedundancyOptimizer(
-            model.parameters(), optimizer_class=AdamW, lr=args.learning_rate, fused=True
+            model.parameters(), optimizer_class=Adafactor, lr=args.learning_rate
         )
     else:
-        optimizer = AdamW(model.parameters(), lr=args.learning_rate, fused=True)
-
-    perplexity_metric = Perplexity(ignore_index=training.PADDING_INDEX).to(args.device)
+        optimizer = Adafactor(model.parameters(), lr=args.learning_rate)
 
     starting_epoch = 1
 
@@ -197,11 +195,15 @@ def main():
             args.checkpoint_path, map_location=args.device, weights_only=True
         )
 
-        model.load_state_dict(checkpoint["model"])
-        optimizer.load_state_dict(checkpoint["optimizer"])
+        model.load_state_dict(checkpoint["model"], strict=False)
+        # optimizer.load_state_dict(checkpoint["optimizer"])
         starting_epoch += checkpoint["epoch"]
 
         print("Previous checkpoint resumed successfully")
+
+    model = model.to(args.device)
+
+    perplexity_metric = Perplexity(ignore_index=training.PADDING_INDEX).to(args.device)
 
     model.train()
 

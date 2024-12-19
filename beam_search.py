@@ -9,7 +9,7 @@ from torch.amp import autocast
 from torch.cuda import is_available as cuda_is_available, is_bf16_supported
 
 from model import GPT, GPTWithLoRA
-from data import Alpaca
+from data import Alpaca, IMDB
 
 import tiktoken
 
@@ -22,7 +22,8 @@ def main():
     parser.add_argument("--checkpoint_path", default="./out/checkpoint.pt", type=str)
     parser.add_argument("--lora_path", default=None, type=str)
     parser.add_argument("--max_tokens", default=200, type=int)
-    parser.add_argument("--num_candidates", default=5, type=int)
+    parser.add_argument("--num_candidates", default=3, type=int)
+    parser.add_argument("--beam_width", default=16, type=int)
     parser.add_argument("--device", default="cuda", type=str)
     parser.add_argument("--seed", default=None, type=int)
 
@@ -70,6 +71,8 @@ def main():
 
         model.load_state_dict(checkpoint["lora"], strict=False)
 
+        model.merge_lora_parameters()
+
         print("LoRA checkpoint loaded")
 
     model.to(args.device)
@@ -80,7 +83,7 @@ def main():
         prompt = input("Enter a prompt: ")
 
         if args.lora_path:
-            prompt = Alpaca.PROMPT_TEMPLATE.format(instruction=prompt)
+            prompt = IMDB.PROMPT_TEMPLATE.format(review=prompt)
 
         prompt = tokenizer.encode_ordinary(prompt)
 
@@ -91,10 +94,11 @@ def main():
                 prompt,
                 args.max_tokens,
                 args.num_candidates,
+                args.beam_width,
             )
 
             for i, candidate in enumerate(candidates, start=1):
-                print(f"#{i} ({candidate.probability:.5}):")
+                print(f"Sequence #{i} ({candidate.probability:.4}):")
 
                 out = tokenizer.decode(candidate.tokens.tolist()).strip()
 

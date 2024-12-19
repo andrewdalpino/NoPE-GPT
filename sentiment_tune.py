@@ -1,11 +1,13 @@
 import random
 
+from math import isnan
+
 from argparse import ArgumentParser
 
 import torch
 
 from torch.utils.data import DataLoader
-from torch.optim import Adafactor
+from torch.optim import AdamW
 from torch.amp import autocast
 from torch.cuda import is_available as cuda_is_available, is_bf16_supported
 from torch.utils.data import random_split
@@ -13,7 +15,7 @@ from torch.utils.data import random_split
 from torchmetrics.text import Perplexity
 
 from model import GPT, GPTWithLoRA
-from data import Alpaca
+from data import IMDB
 
 import tiktoken
 
@@ -21,7 +23,9 @@ from tqdm import tqdm
 
 
 def main():
-    parser = ArgumentParser(description="Instruction-tune the foundation model.")
+    parser = ArgumentParser(
+        description="Fine-tune the foundation model for sentiment analysis."
+    )
 
     parser.add_argument("--base_model_path", default="./out/checkpoint.pt", type=str)
     parser.add_argument("--batch_size", default=1, type=int)
@@ -35,8 +39,9 @@ def main():
     parser.add_argument("--eval_interval", default=1, type=int)
     parser.add_argument("--checkpoint_interval", default=1, type=int)
     parser.add_argument(
-        "--checkpoint_path", default="./out/lora_instruction.pt", type=str
+        "--checkpoint_path", default="./out/lora_sentiment.pt", type=str
     )
+    parser.add_argument("--keep_checkpoint_history", action="store_true")
     parser.add_argument("--resume", action="store_true")
     parser.add_argument("--device", default="cuda", type=str)
     parser.add_argument("--seed", default=None, type=int)
@@ -66,20 +71,19 @@ def main():
 
     model_args = checkpoint["model_args"]
 
-    dataset = Alpaca(model_args["block_size"], args.mask_input)
-
-    training, testing = random_split(dataset, [0.9, 0.1])
+    training = IMDB(model_args["block_size"], train=True, mask_input=args.mask_input)
+    testing = IMDB(model_args["block_size"], train=False, mask_input=args.mask_input)
 
     train_loader = DataLoader(
         training,
-        collate_fn=dataset.collate,
+        collate_fn=training.collate,
         batch_size=args.batch_size,
         pin_memory="cpu" not in args.device,
         shuffle=True,
     )
     test_loader = DataLoader(
         testing,
-        collate_fn=dataset.collate,
+        collate_fn=testing.collate,
         batch_size=args.batch_size,
         pin_memory="cpu" not in args.device,
         shuffle=False,
@@ -106,9 +110,9 @@ def main():
 
     print(f"Model has {model.num_trainable_params:,} trainable parameters")
 
-    optimizer = Adafactor(model.parameters(), lr=args.learning_rate)
+    optimizer = AdamW(model.parameters(), lr=args.learning_rate, fused=True)
 
-    perplexity_metric = Perplexity(ignore_index=dataset.PADDING_INDEX).to(args.device)
+    perplexity_metric = Perplexity(ignore_index=training.PADDING_INDEX).to(args.device)
 
     starting_epoch = 1
 
@@ -127,7 +131,7 @@ def main():
 
     model.train()
 
-    print("Instruction-tuning ...")
+    print("Sentiment-tuning ...")
 
     for epoch in range(starting_epoch, args.num_epochs + 1):
         total_cross_entropy, total_batches = 0.0, 0
@@ -193,8 +197,6 @@ def main():
             torch.save(checkpoint, args.checkpoint_path)
 
             print("Checkpoint saved")
-
-    print("Done!")
 
 
 if __name__ == "__main__":

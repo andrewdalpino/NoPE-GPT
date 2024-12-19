@@ -22,7 +22,7 @@ from torch.nn import (
 
 from torch.nn.functional import softmax, log_softmax
 from torch.nn.utils.parametrize import register_parametrization, remove_parametrizations
-from torch.utils.checkpoint import checkpoint_sequential
+from torch.utils.checkpoint import checkpoint
 
 
 class GPT(Module):
@@ -106,7 +106,7 @@ class GPT(Module):
         z = tok_out + pos_out
 
         for layer in self.body:
-            z = layer(z, causal_mask)
+            z = checkpoint(layer, z, causal_mask, use_reentrant=False)
 
         z = self.output_norm(z)
         z = self.output_layer(z)
@@ -125,9 +125,10 @@ class GPT(Module):
     def generate(
         self,
         prompt: Tensor,
-        max_tokens: int = 500,
-        temperature: float = 0.8,
-        top_k: int = 20,
+        max_tokens: int = 1000,
+        temperature: float = 1.0,
+        top_k: int = 500,
+        top_p: float = 0.9,
     ) -> Iterator:
         """
         Given a prompt, sample the next {max_tokens} tokens from the model weighted
@@ -142,10 +143,13 @@ class GPT(Module):
                 f"Temperature must be greater than 0, {temperature} given."
             )
 
-        if top_k > self.vocabulary_size:
+        if top_k <= 0 or top_k > self.vocabulary_size:
             raise ValueError(
-                f"Top k must be less than the vocabulary size, {top_k} given."
+                f"Top k must be between 1 and {self.vocabulary_size}, {top_k} given."
             )
+
+        if top_p <= 0.0 or top_p > 1.0:
+            raise ValueError(f"Top p must be between 0 and 1, {top_p} given.")
 
         context_window = prompt
 
@@ -156,10 +160,20 @@ class GPT(Module):
 
             logits = y_pred[0, -1, :]
 
-            logits, indices = torch.topk(logits, top_k, sorted=False)
+            logits, indices = torch.topk(logits, top_k, sorted=True)
 
-            if temperature != 1.0:
-                logits /= temperature
+            probabilities = softmax(logits, dim=0)
+
+            cumulative_probability_mass = torch.cumsum(probabilities, dim=0)
+
+            threshold_p = max(top_p, cumulative_probability_mass[0])
+
+            selected_indices = cumulative_probability_mass <= threshold_p
+
+            logits = logits[selected_indices]
+            indices = indices[selected_indices]
+
+            logits /= temperature
 
             probabilities = softmax(logits, dim=0)
 
@@ -167,21 +181,20 @@ class GPT(Module):
 
             next_token = indices[offset]
 
-            yield next_token
-
             if next_token == self.eos_index:
                 break
 
-            new_context = next_token.unsqueeze(0)
+            yield next_token
 
-            context_window = torch.cat((context_window, new_context))
+            context_window = torch.cat((context_window, next_token.unsqueeze(0)))
 
     @torch.no_grad()
     def beam_search(
         self,
         prompt: Tensor,
         max_tokens: int = 200,
-        num_candidates: int = 5,
+        num_candidates: int = 3,
+        beam_width: int = 16,
     ) -> list:
         """
         Given a prompt, return the {num_candidates} highest probability sequences.
@@ -195,22 +208,17 @@ class GPT(Module):
                 f"Num candidates must be greater than 0, {num_candidates} given."
             )
 
+        if beam_width <= 0:
+            raise ValueError(f"Beam width must be greater than 0, {beam_width} given.")
+
         @dataclass(order=True)
         class Candidate:
             log_probability: float
             tokens: Tensor
 
             @property
-            def priority(self) -> float:
-                return self.probability
-
-            @property
             def probability(self) -> float:
                 return exp(self.log_probability)
-
-            @property
-            def length_penalty(self) -> float:
-                return 1.0 / sqrt(len(self.tokens))
 
         candidates, completed = [], []
 
@@ -223,14 +231,16 @@ class GPT(Module):
 
             if len(completed) >= num_candidates:
                 completed = sorted(
-                    completed, key=lambda candidate: candidate.priority, reverse=True
+                    completed,
+                    key=lambda candidate: candidate.log_probability,
+                    reverse=True,
                 )
 
                 completed = completed[:num_candidates]
 
-                worst_completed_candidate = completed[-1]
+                worst_candidate = completed[-1]
 
-                if candidate.priority < worst_completed_candidate.priority:
+                if candidate.log_probability < worst_candidate.log_probability:
                     break
 
             if len(candidate.tokens) > 0 and candidate.tokens[-1] == self.eos_index:
@@ -253,7 +263,7 @@ class GPT(Module):
 
             logits = y_pred[0, -1, :]
 
-            logits, indices = torch.topk(logits, num_candidates, sorted=False)
+            logits, indices = torch.topk(logits, beam_width, sorted=False)
 
             log_probabilities = log_softmax(logits, dim=0)
 
@@ -265,10 +275,12 @@ class GPT(Module):
                 candidates.append(Candidate(log_probability, tokens))
 
             candidates = sorted(
-                candidates, key=lambda candidate: candidate.priority, reverse=True
+                candidates,
+                key=lambda candidate: candidate.log_probability,
+                reverse=True,
             )
 
-            candidates = candidates[:num_candidates]
+            candidates = candidates[:beam_width]
 
         return completed
 
@@ -332,15 +344,15 @@ class GPTWithLoRA(Module):
             if "lora" in name
         }
 
-    def merge_parameters(self) -> GPT:
+    def merge_lora_parameters(self) -> GPT:
         """Merge the LoRA parameters with the original parameters."""
 
         for module in self.model.modules():
             if hasattr(module, "parametrizations"):
-                for name in module.parametrizations.keys():
-                    remove_parametrizations(module, name, leave_parametrized=True)
+                lora_params = [name for name in module.parametrizations.keys()]
 
-        return self.model
+                for name in lora_params:
+                    remove_parametrizations(module, name, leave_parametrized=True)
 
     def forward(
         self, x: Tensor, y: Tensor | None = None
@@ -348,7 +360,12 @@ class GPTWithLoRA(Module):
         return self.model.forward(x, y)
 
     def generate(
-        self, prompt: Tensor, max_tokens: int, temperature: float, top_k: int
+        self,
+        prompt: Tensor,
+        max_tokens: int,
+        temperature: float,
+        top_k: int,
+        top_p: float,
     ) -> Iterator:
         return self.model.generate(prompt, max_tokens, temperature, top_k)
 
@@ -357,8 +374,9 @@ class GPTWithLoRA(Module):
         prompt: Tensor,
         max_tokens: int = 200,
         num_candidates: int = 3,
+        beam_width: int = 16,
     ) -> list:
-        return self.model.beam_search(prompt, max_tokens, num_candidates)
+        return self.model.beam_search(prompt, max_tokens, num_candidates, beam_width)
 
 
 class CausalSelfAttentionBlock(Module):
@@ -395,11 +413,9 @@ class CausalSelfAttentionBlock(Module):
         self.norm2 = LayerNorm(embedding_dimensions, bias=False)
         self.mlp = MLP(embedding_dimensions, 4 * embedding_dimensions, dropout)
 
-    def forward(self, x: Tensor, causal_mask: Tensor) -> Tensor:
-        b, t, c = x.size()
-
+    def forward(self, x: Tensor, attention_mask: Tensor) -> Tensor:
         z = self.norm1(x)
-        z, _ = self.attention(z, z, z, attn_mask=causal_mask, is_causal=True)
+        z, _ = self.attention(z, z, z, attn_mask=attention_mask, is_causal=True)
 
         z = x + z  # Residual connection
 
