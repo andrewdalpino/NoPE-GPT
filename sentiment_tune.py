@@ -172,10 +172,9 @@ def main():
                 y = y.to(args.device, non_blocking=True)
 
                 with torch.no_grad():
-                    with forward_context:
-                        y_pred, _ = model(x)
+                    y_pred, _ = model(x)
 
-                    perplexity_metric.update(y_pred, y)
+                perplexity_metric.update(y_pred, y)
 
             perplexity = perplexity_metric.compute()
 
