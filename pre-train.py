@@ -42,7 +42,7 @@ def main():
     parser.add_argument("--batch_size", default=1, type=int)
     parser.add_argument("--gradient_accumulation_steps", default=128, type=int)
     parser.add_argument("--samples_per_epoch", default=4096, type=int)
-    parser.add_argument("--learning_rate", default=5e-4, type=float)
+    parser.add_argument("--learning_rate", default=5e-3, type=float)
     parser.add_argument("--max_gradient_norm", default=1.0, type=float)
     parser.add_argument("--dropout", default=0.1, type=float)
     parser.add_argument("--activation_checkpointing", action="store_true")
@@ -173,7 +173,7 @@ def main():
         "eos_index": training.eos_index,
     }
 
-    model = GPT(**model_args)
+    model = GPT(**model_args).to(args.device)
 
     if IS_DDP:
         model = DistributedDataParallel(model, device_ids=[LOCAL_RANK])
@@ -185,7 +185,9 @@ def main():
 
     if IS_DDP:
         optimizer = ZeroRedundancyOptimizer(
-            model.parameters(), optimizer_class=Adafactor, lr=args.learning_rate
+            model.parameters(),
+            optimizer_class=Adafactor,
+            lr=args.learning_rate,
         )
     else:
         optimizer = Adafactor(model.parameters(), lr=args.learning_rate)
@@ -202,8 +204,6 @@ def main():
         starting_epoch += checkpoint["epoch"]
 
         print("Previous checkpoint resumed successfully")
-
-    model = model.to(args.device)
 
     perplexity_metric = Perplexity(ignore_index=training.PADDING_INDEX).to(args.device)
 

@@ -336,7 +336,7 @@ class IMDB(Dataset):
 
         tokens = self.tokenizer.encode_ordinary(text)
 
-        tokens = tokens[: self.max_tokens_per_sample - 4]  # Leave room for label tokens
+        tokens = tokens[: self.max_tokens_per_sample - 5]  # Leave room for label tokens
 
         sample = deepcopy(tokens)
 

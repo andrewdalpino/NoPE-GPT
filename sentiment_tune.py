@@ -7,7 +7,7 @@ from argparse import ArgumentParser
 import torch
 
 from torch.utils.data import DataLoader
-from torch.optim import AdamW
+from torch.optim import Adafactor
 from torch.amp import autocast
 from torch.cuda import is_available as cuda_is_available, is_bf16_supported
 from torch.utils.data import random_split
@@ -30,7 +30,7 @@ def main():
     parser.add_argument("--base_model_path", default="./out/checkpoint.pt", type=str)
     parser.add_argument("--batch_size", default=1, type=int)
     parser.add_argument("--gradient_accumulation_steps", default=128, type=int)
-    parser.add_argument("--learning_rate", default=5e-4, type=float)
+    parser.add_argument("--learning_rate", default=5e-3, type=float)
     parser.add_argument("--mask_input", default=True, type=bool)
     parser.add_argument("--rank", default=8, type=int)
     parser.add_argument("--alpha", default=1.0, type=float)
@@ -110,7 +110,7 @@ def main():
 
     print(f"Model has {model.num_trainable_params:,} trainable parameters")
 
-    optimizer = AdamW(model.parameters(), lr=args.learning_rate, fused=True)
+    optimizer = Adafactor(model.parameters(), lr=args.learning_rate)
 
     perplexity_metric = Perplexity(ignore_index=training.PADDING_INDEX).to(args.device)
 
