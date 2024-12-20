@@ -13,6 +13,7 @@ import numpy as np
 
 import torch
 
+from torch import Tensor
 from torch.utils.data import IterableDataset, Dataset
 from torch.nn.utils.rnn import pad_sequence
 
@@ -31,8 +32,6 @@ class Openwebtext(IterableDataset):
     NUM_SHARDS = 1024
 
     ENCODING = "r50k_base"
-
-    VOCABULARY_SIZE = 50257
 
     PADDING_INDEX = -100
 
@@ -106,6 +105,14 @@ class Openwebtext(IterableDataset):
         self.tokens_per_sample = tokens_per_sample
         self.samples_per_epoch = samples_per_epoch
 
+    @property
+    def vocabulary_size(self) -> int:
+        return self.tokenizer.max_token_value + 1
+
+    @property
+    def eos_index(self) -> int:
+        return self.tokenizer.eot_token
+
     def tokenize(self, sample: dict) -> dict:
         tokens = self.tokenizer.encode_ordinary(sample["text"])
 
@@ -136,8 +143,6 @@ class Alpaca(Dataset):
     DATASET_NAME = "tatsu-lab/alpaca"
 
     ENCODING = "r50k_base"
-
-    VOCABULARY_SIZE = 50257
 
     PADDING_INDEX = -100
 
@@ -174,7 +179,15 @@ class Alpaca(Dataset):
         self.max_tokens_per_sample = max_tokens_per_sample
         self.mask_input = mask_input
 
-    def collate(self, batch: list):
+    @property
+    def vocabulary_size(self) -> int:
+        return self.tokenizer.max_token_value + 1
+
+    @property
+    def eos_index(self) -> int:
+        return self.tokenizer.eot_token
+
+    def collate(self, batch: list) -> tuple[Tensor, Tensor]:
         """Custom collate function adds left padding to batched samples."""
 
         sample, labels = [], []
@@ -248,8 +261,6 @@ class IMDB(Dataset):
 
     ENCODING = "r50k_base"
 
-    VOCABULARY_SIZE = 50257
-
     PADDING_INDEX = -100
 
     PROMPT_TEMPLATE = (
@@ -282,7 +293,15 @@ class IMDB(Dataset):
         self.max_tokens_per_sample = max_tokens_per_sample
         self.mask_input = mask_input
 
-    def collate(self, batch: list):
+    @property
+    def vocabulary_size(self) -> int:
+        return self.tokenizer.max_token_value + 1
+
+    @property
+    def eos_index(self) -> int:
+        return self.tokenizer.eot_token
+
+    def collate(self, batch: list) -> tuple[Tensor, Tensor]:
         """Custom collate function adds left padding to batched samples."""
 
         sample, labels = [], []

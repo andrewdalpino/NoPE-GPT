@@ -1,5 +1,6 @@
 from math import sqrt, exp
 from dataclasses import dataclass, field
+from functools import partial
 from typing import Iterator, Self
 
 import torch
@@ -30,14 +31,15 @@ class GPT(Module):
 
     def __init__(
         self,
-        vocabulary_size: int,
-        embedding_dimensions: int,
-        block_size: int,
-        num_heads: int,
-        num_layers: int,
-        dropout: float,
-        padding_index: int,
-        eos_index: int,
+        block_size: int = 1024,
+        embedding_dimensions: int = 1024,
+        num_heads: int = 16,
+        num_layers: int = 24,
+        dropout: float = 0.1,
+        activation_checkpointing: bool = False,
+        vocabulary_size: int = 50257,
+        padding_index: int = -100,
+        eos_index: int = 50256,
     ):
         super().__init__()
 
@@ -81,6 +83,11 @@ class GPT(Module):
         self.positions = Buffer(positions, persistent=False)
         self.causal_mask = Buffer(causal_mask, persistent=False)
 
+        if activation_checkpointing:
+            self.checkpoint = partial(checkpoint, use_reentrant=False)
+        else:
+            self.checkpoint = lambda layer, z, causal_mask: layer(z, causal_mask)
+
         self.loss_function = CrossEntropyLoss(ignore_index=padding_index)
 
         self.vocabulary_size = vocabulary_size
@@ -97,7 +104,6 @@ class GPT(Module):
         b, t = x.size()
 
         positions = self.positions[:t]
-
         causal_mask = self.causal_mask[:t, :t]
 
         tok_out = self.token_embeddings(x)
@@ -106,7 +112,7 @@ class GPT(Module):
         z = tok_out + pos_out
 
         for layer in self.body:
-            z = checkpoint(layer, z, causal_mask, use_reentrant=False)
+            z = self.checkpoint(layer, z, causal_mask)
 
         z = self.output_norm(z)
         z = self.output_layer(z)
@@ -166,7 +172,9 @@ class GPT(Module):
 
             cumulative_probability_mass = torch.cumsum(probabilities, dim=0)
 
-            threshold_p = max(top_p, cumulative_probability_mass[0])
+            min_probability_mass = cumulative_probability_mass[0]
+
+            threshold_p = max(top_p, min_probability_mass.item())
 
             selected_indices = cumulative_probability_mass <= threshold_p
 
@@ -291,7 +299,9 @@ class GPTWithLoRA(Module):
     to the intermediate layers of the network.
     """
 
-    def __init__(self, model: GPT, rank: int, alpha: float, dropout: float):
+    def __init__(
+        self, model: GPT, rank: int = 8, alpha: float = 1.0, dropout: float = 0.05
+    ):
         super().__init__()
 
         if rank <= 0:
@@ -344,7 +354,7 @@ class GPTWithLoRA(Module):
             if "lora" in name
         }
 
-    def merge_lora_parameters(self) -> GPT:
+    def merge_lora_parameters(self):
         """Merge the LoRA parameters with the original parameters."""
 
         for module in self.model.modules():

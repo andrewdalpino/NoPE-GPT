@@ -1,6 +1,6 @@
 # GPT
 
-A Generative Pre-trained Transformer (GPT) trained on the Openwebtext dataset. The default implementation uses `r50k_base` BPE tokenization with a network architecture similar to OpenAI's GPT series but can easily be customized and scaled up or down to meet your needs and compute budget with some parameter adjustments. In addition, you may incorporate your own training data alongside Openwebtext for additional pre-training samples or for fine-tuning for a specific task after pre-training. It also supports PyTorch's Distributed Data Parallel (DDP) protocol for efficient training over multiple CUDA-enabled GPU clusters.
+A Generative Pre-trained Transformer (GPT) trained on the Openwebtext dataset. The default implementation uses `r50k_base` BPE tokenization with a network architecture similar to OpenAI's GPT series but can easily be customized and scaled up or down to meet your needs and compute budget with some parameter adjustments. In addition, you may incorporate your own training data alongside Openwebtext for additional pre-training samples or for fine-tuning for a specific task after pre-training. It also supports PyTorch's built-in Distributed Data Parallel (DDP) protocol with sharding for efficient training over multiple CUDA-enabled GPU clusters.
 
 ## Download the Repository
 Clone the project locally using git:
@@ -64,14 +64,15 @@ python generate.py
 | --gradient_accumulation_steps | 128 | int | The number of batches to pass through the network before updating the weights. |
 | --samples_per_epoch | 4096 | int | The number of training samples to pass through the network every epoch. |
 | --learning_rate | 5e-4 | float | The global step size taken after every gradient accumulation step. |
-| --dropout | 0.1 | float | The proportion of signals to send to zero during training as regularization. |
 | --max_gradient_norm | 1.0 | float | Clip gradients above this threshold before stepping. |
 | --num_epochs | 2145 | int | The number of epochs to train for. |
 | --eval_interval | 10 | int | Evaluate the model after this many epochs on the testing set. |
 | --block_size | 1024 | int | The number of tokens within the context window for every sample. |
-| --embedding_dimensions | 768 | int | The dimensionality of the token embeddings. |
-| --num_attention_heads | 12 | int | The number of attention heads within every block. |
+| --embedding_dimensions | 1024 | int | The dimensionality of the token embeddings. |
+| --num_attention_heads | 16 | int | The number of attention heads within every block. |
 | --num_hidden_layers | 24 | int | The number of attention/MLP blocks within the hidden layer of the network. |
+| --dropout | 0.1 | float | The proportion of signals to send to zero during training as regularization. |
+| --activation_checkpointing | False | bool | Should we use activation checkpointing? |
 | --checkpoint_interval | 20 | int | Save the model parameters to disk every this many epochs. |
 | --checkpoint_path | "./out/checkpoint.pt" | string | The path to the checkpoint file on disk. |
 | --dataset_path | "./dataset" | string | The path to the dataset files on disk. |
@@ -80,7 +81,7 @@ python generate.py
 | --device | "cuda" | string | The device to run the computation on. |
 | --seed | None | int | The seed for the random number generator. |
 
-### Fine-tuning Arguments
+### Instruction-tuning Arguments
 
 | Argument | Default | Type | Description |
 |---|---|---|---|
@@ -91,6 +92,7 @@ python generate.py
 | --mask_input | False | bool | Should we mask the input part of the sample i.e. only train on the output? |
 | --rank | 8 | int | The rank of the LoRA decomposition matrices. |
 | --alpha | 1.0 | float | The strength of the LoRA signal. |
+| --dropout | 0.05 | float | The proportion of signals to send to zero during training as regularization. |
 | --num_epochs | 4 | int | The number of epochs to train for. |
 | --eval_interval | 1 | int | Evaluate the model after this many epochs on the testing set. |
 | --checkpoint_interval | 1 | int | Save the model parameters to disk every this many epochs. |
@@ -107,7 +109,8 @@ python generate.py
 | --lora_path | "./out/lora.pt" | string | The path to the LoRA checkpoint. |
 | --max_tokens | 500 | int | The maximum number of tokens that the model should generate per sample. |
 | --temperature | 1.0 | float | The amount of regularization applied to the candidate token probabilities. |
-| --top_k | 20 | int | Only sample from this many candidate tokens with the highest probabilities. |
+| --top_k | 500 | int | Only sample from this many candidate tokens with the highest probabilities. |
+| --top_p | 0.9 | float | Of the `top_k` tokens, drop all but the `top_p` portion of the cumulative probability distribution. |
 | --device | "cuda" | string | The device to run the computation on. |
 | --seed | None | int | The seed for the random number generator. |
 
@@ -118,7 +121,8 @@ python generate.py
 | --checkpoint_path | "./out/checkpoint.pt" | string | The path to the checkpoint file on disk. |
 | --lora_path | "./out/lora.pt" | string | The path to the LoRA checkpoint. |
 | --max_tokens | 200 | int | The maximum number of tokens that the model should generate per sample. |
-| --num_candidates | 5 | int | The number of candidate sequences to keep track of. |
+| --num_candidates | 3 | int | The number of candidate sequences to output. |
+| --beam_width | 16 | int | The number of candidate sequences to keep track of during search. |
 | --device | "cuda" | string | The device to run the computation on. |
 | --seed | None | int | The seed for the random number generator. |
 

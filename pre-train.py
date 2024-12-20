@@ -45,6 +45,7 @@ def main():
     parser.add_argument("--learning_rate", default=5e-4, type=float)
     parser.add_argument("--max_gradient_norm", default=1.0, type=float)
     parser.add_argument("--dropout", default=0.1, type=float)
+    parser.add_argument("--activation_checkpointing", action="store_true")
     parser.add_argument("--num_epochs", default=2145, type=int)
     parser.add_argument("--block_size", default=1024, type=int)
     parser.add_argument("--embedding_dimensions", default=1024, type=int)
@@ -161,14 +162,15 @@ def main():
     )
 
     model_args = {
-        "vocabulary_size": training.VOCABULARY_SIZE,
         "block_size": args.block_size,
         "embedding_dimensions": args.embedding_dimensions,
         "num_heads": args.num_attention_heads,
         "num_layers": args.num_hidden_layers,
         "dropout": args.dropout,
+        "activation_checkpointing": args.activation_checkpointing,
+        "vocabulary_size": training.vocabulary_size,
         "padding_index": training.PADDING_INDEX,
-        "eos_index": training.tokenizer.eot_token,
+        "eos_index": training.eos_index,
     }
 
     model = GPT(**model_args)
@@ -195,8 +197,8 @@ def main():
             args.checkpoint_path, map_location=args.device, weights_only=True
         )
 
-        model.load_state_dict(checkpoint["model"], strict=False)
-        # optimizer.load_state_dict(checkpoint["optimizer"])
+        model.load_state_dict(checkpoint["model"])
+        optimizer.load_state_dict(checkpoint["optimizer"])
         starting_epoch += checkpoint["epoch"]
 
         print("Previous checkpoint resumed successfully")

@@ -68,7 +68,7 @@ def main():
 
     dataset = Alpaca(model_args["block_size"], args.mask_input)
 
-    training, testing = random_split(dataset, [0.9, 0.1])
+    training, testing = random_split(dataset, (0.9, 0.1))
 
     train_loader = DataLoader(
         training,
