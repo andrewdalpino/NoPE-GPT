@@ -5,8 +5,7 @@ from argparse import ArgumentParser
 
 import torch
 
-from torch.amp import autocast
-from torch.cuda import is_available as cuda_is_available, is_bf16_supported
+from torch.cuda import is_available as cuda_is_available
 
 from model import GPT, GPTWithLoRA
 from data import Alpaca
@@ -34,14 +33,6 @@ def main():
         raise RuntimeError("Cuda is not available.")
 
     torch.set_float32_matmul_precision("high")
-
-    dtype = (
-        torch.bfloat16
-        if "cuda" in args.device and is_bf16_supported()
-        else torch.float32
-    )
-
-    forward_context = autocast(device_type=args.device, dtype=dtype)
 
     if args.seed:
         torch.manual_seed(args.seed)
@@ -90,20 +81,18 @@ def main():
 
         prompt = torch.tensor(prompt, dtype=torch.int64, device=args.device)
 
-        with forward_context:
-            for token in model.generate(
-                prompt, args.max_tokens, args.temperature, args.top_k, args.top_p
-            ):
+        for token in model.generate(
+            prompt, args.max_tokens, args.temperature, args.top_k, args.top_p
+        ):
+            out = tokenizer.decode_single_token_bytes(token).decode(
+                "utf-8", errors="replace"
+            )
 
-                out = tokenizer.decode_single_token_bytes(token).decode(
-                    "utf-8", errors="replace"
-                )
-
-                print(out, end="", flush=True)
+            print(out, end="", flush=True)
 
         print("\n")
 
-        if "y" not in input("Try again? (yes|no): ").lower():
+        if "y" not in input("Go again? (yes|no): ").lower():
             break
 
 

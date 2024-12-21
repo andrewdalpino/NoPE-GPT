@@ -5,11 +5,10 @@ from argparse import ArgumentParser
 
 import torch
 
-from torch.amp import autocast
-from torch.cuda import is_available as cuda_is_available, is_bf16_supported
+from torch.cuda import is_available as cuda_is_available
 
 from model import GPT, GPTWithLoRA
-from data import Alpaca, IMDB
+from data import Alpaca
 
 import tiktoken
 
@@ -33,14 +32,6 @@ def main():
         raise RuntimeError("Cuda is not available.")
 
     torch.set_float32_matmul_precision("high")
-
-    dtype = (
-        torch.bfloat16
-        if "cuda" in args.device and is_bf16_supported()
-        else torch.float32
-    )
-
-    forward_context = autocast(device_type=args.device, dtype=dtype)
 
     if args.seed:
         torch.manual_seed(args.seed)
@@ -83,26 +74,25 @@ def main():
         prompt = input("Enter a prompt: ")
 
         if args.lora_path:
-            prompt = IMDB.PROMPT_TEMPLATE.format(review=prompt)
+            prompt = Alpaca.PROMPT_TEMPLATE.format(instruction=prompt)
 
         prompt = tokenizer.encode_ordinary(prompt)
 
         prompt = torch.tensor(prompt, dtype=torch.int64, device=args.device)
 
-        with forward_context:
-            candidates = model.beam_search(
-                prompt,
-                args.max_tokens,
-                args.num_candidates,
-                args.beam_width,
-            )
+        candidates = model.beam_search(
+            prompt,
+            args.max_tokens,
+            args.num_candidates,
+            args.beam_width,
+        )
 
-            for i, candidate in enumerate(candidates, start=1):
-                print(f"Sequence #{i} ({candidate.probability:.4}):")
+        for i, candidate in enumerate(candidates, start=1):
+            print(f"Sequence #{i} ({candidate.probability:.4}):")
 
-                out = tokenizer.decode(candidate.tokens.tolist()).strip()
+            out = tokenizer.decode(candidate.tokens.tolist()).strip()
 
-                print(out, end="\n\n")
+            print(out, end="\n\n")
 
         print("\n")
 

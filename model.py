@@ -82,7 +82,7 @@ class GPT(Module):
         if activation_checkpointing:
             self.checkpoint = partial(checkpoint, use_reentrant=False)
         else:
-            self.checkpoint = lambda layer, z, causal_mask: layer(z, causal_mask)
+            self.checkpoint = lambda layer, x, attention_mask: layer(x, attention_mask)
 
         self.loss_function = CrossEntropyLoss(ignore_index=padding_index)
 
@@ -99,7 +99,7 @@ class GPT(Module):
     ) -> tuple[Tensor, Tensor | None]:
         z = self.token_embeddings(x)
 
-        b, t = x.size()
+        b, t, d = z.size()
 
         causal_mask = self.causal_mask[:t, :t]
 
