@@ -55,14 +55,12 @@ class GPT(Module):
             vocabulary_size, embedding_dimensions, padding_idx=padding_index
         )
 
-        positional_embeddings = Embedding(block_size, embedding_dimensions)
-
         output_layer = Linear(embedding_dimensions, vocabulary_size, bias=False)
 
         token_embeddings.weight = output_layer.weight  # Tie weights
 
         self.token_embeddings = token_embeddings
-        self.positional_embeddings = positional_embeddings
+
         self.body = ModuleList(
             [
                 CausalSelfAttentionBlock(
@@ -71,16 +69,14 @@ class GPT(Module):
                 for _ in range(num_layers)
             ]
         )
+
         self.output_norm = LayerNorm(embedding_dimensions, bias=False)
         self.output_layer = output_layer
-
-        positions = torch.arange(0, block_size)
 
         causal_mask = torch.tril(torch.ones((block_size, block_size)))
         causal_mask = causal_mask.masked_fill(causal_mask == 0, float("-Inf"))
         causal_mask = causal_mask.masked_fill(causal_mask == 1, 0.0)
 
-        self.positions = Buffer(positions, persistent=False)
         self.causal_mask = Buffer(causal_mask, persistent=False)
 
         if activation_checkpointing:
@@ -101,15 +97,11 @@ class GPT(Module):
     def forward(
         self, x: Tensor, y: Tensor | None = None
     ) -> tuple[Tensor, Tensor | None]:
+        z = self.token_embeddings(x)
+
         b, t = x.size()
 
-        positions = self.positions[:t]
         causal_mask = self.causal_mask[:t, :t]
-
-        tok_out = self.token_embeddings(x)
-        pos_out = self.positional_embeddings(positions)
-
-        z = tok_out + pos_out
 
         for layer in self.body:
             z = self.checkpoint(layer, z, causal_mask)
@@ -131,7 +123,7 @@ class GPT(Module):
     def generate(
         self,
         prompt: Tensor,
-        max_tokens: int = 1000,
+        max_tokens: int = 500,
         temperature: float = 1.0,
         top_k: int = 500,
         top_p: float = 0.9,
@@ -310,9 +302,6 @@ class GPTWithLoRA(Module):
         if alpha <= 0.0:
             raise ValueError(f"Alpha must be greater than 0, {alpha} given.")
 
-        if dropout < 0.0:
-            raise ValueError(f"Dropout must be greater than 0, {dropout} given.")
-
         for param in model.parameters():
             param.requires_grad = False
 
@@ -372,10 +361,10 @@ class GPTWithLoRA(Module):
     def generate(
         self,
         prompt: Tensor,
-        max_tokens: int,
-        temperature: float,
-        top_k: int,
-        top_p: float,
+        max_tokens: int = 500,
+        temperature: float = 1.0,
+        top_k: int = 500,
+        top_p: float = 0.9,
     ) -> Iterator:
         return self.model.generate(prompt, max_tokens, temperature, top_k)
 

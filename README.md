@@ -96,7 +96,7 @@ python generate.py
 | --num_epochs | 4 | int | The number of epochs to train for. |
 | --eval_interval | 1 | int | Evaluate the model after this many epochs on the testing set. |
 | --checkpoint_interval | 1 | int | Save the model parameters to disk every this many epochs. |
-| --checkpoint_path | "./out/checkpoint.pt" | string | The path to the checkpoint file on disk. |
+| --checkpoint_path | "./out/lora_instruction.pt" | string | The path to the checkpoint file on disk. |
 | --resume | False | bool | Should we resume training from the last checkpoint? |
 | --device | "cuda" | string | The device to run the computation on. |
 | --seed | None | int | The seed for the random number generator. |
@@ -106,7 +106,7 @@ python generate.py
 | Argument | Default | Type | Description |
 |---|---|---|---|
 | --checkpoint_path | "./out/checkpoint.pt" | string | The path to the checkpoint file on disk. |
-| --lora_path | "./out/lora.pt" | string | The path to the LoRA checkpoint. |
+| --lora_path | None | string | The path to the LoRA checkpoint. |
 | --max_tokens | 500 | int | The maximum number of tokens that the model should generate per sample. |
 | --temperature | 1.0 | float | The amount of regularization applied to the candidate token probabilities. |
 | --top_k | 500 | int | Only sample from this many candidate tokens with the highest probabilities. |
@@ -119,7 +119,7 @@ python generate.py
 | Argument | Default | Type | Description |
 |---|---|---|---|
 | --checkpoint_path | "./out/checkpoint.pt" | string | The path to the checkpoint file on disk. |
-| --lora_path | "./out/lora.pt" | string | The path to the LoRA checkpoint. |
+| --lora_path | None | string | The path to the LoRA checkpoint. |
 | --max_tokens | 200 | int | The maximum number of tokens that the model should generate per sample. |
 | --num_candidates | 3 | int | The number of candidate sequences to output. |
 | --beam_width | 16 | int | The number of candidate sequences to keep track of during search. |
@@ -127,15 +127,12 @@ python generate.py
 | --seed | None | int | The seed for the random number generator. |
 
 ## References:
->- S. Rajbhandari, et al. ZeRO: Memory Optimizations Toward Training Trillion Parameter Models, 2020.
->- A. Vaswani, et al. Attention Is All You Need. 31st Conference on Neural Information Processing Systems, 2017.
 >- A. Radford, et al. Language Models are Unsupervised Multitask Learners, OpenAI, 2019.
 >- T. Brown, et al. Language Models are Few-Shot Learners. OpenAI, 2020.
->- O. Press, et. al. Using the Output Embedding to Improve Language Models.
+>- A. Kazemnejad, et al. The Impact of Positional Encoding on Length Generalization in Transformers, 37th Conference on Neural Information Processing Systems (NeurIPS 2023).
+>- S. Rajbhandari, et al. ZeRO: Memory Optimizations Toward Training Trillion Parameter Models, 2020.
 >- J. R. Hermans, et al. Accumulated Gradient Normalization, JMLR: Workshop and Conference Proceedings, 2017.
->- R, Pascanu, et al. On the difficulty of training Recurrent Neural Networks, 2013.
->- I. Loshchilov, et al. Decoupled Weight Decay Regulaization, ILCR, 2019.
->- N. Srivastava, et al. Dropout: A Simple Way To Prevent Neural Networks from Overfitting, Journal of Machine Learning Research 15, 2014.
+>- T. Chen, et al. Training Deep Nets with Sublinear Memory Cost. MIT, 2019.
 
 ## License
 The code is licensed [MIT](LICENSE) and the tutorial is licensed [CC BY-NC 4.0](https://creativecommons.org/licenses/by-nc/4.0/).

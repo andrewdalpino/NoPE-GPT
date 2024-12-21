@@ -186,11 +186,10 @@ def main():
 
         if epoch % args.checkpoint_interval == 0:
             checkpoint = {
+                "epoch": epoch,
+                "lora_args": lora_args,
                 "lora": model.state_dict(),
                 "optimizer": optimizer.state_dict(),
-                "lora_args": lora_args,
-                "epoch": epoch,
-                "seed": args.seed,
             }
 
             torch.save(checkpoint, args.checkpoint_path)

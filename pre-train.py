@@ -42,15 +42,15 @@ def main():
     parser.add_argument("--batch_size", default=1, type=int)
     parser.add_argument("--gradient_accumulation_steps", default=128, type=int)
     parser.add_argument("--samples_per_epoch", default=4096, type=int)
-    parser.add_argument("--learning_rate", default=5e-3, type=float)
+    parser.add_argument("--learning_rate", default=1e-2, type=float)
     parser.add_argument("--max_gradient_norm", default=1.0, type=float)
     parser.add_argument("--dropout", default=0.1, type=float)
-    parser.add_argument("--activation_checkpointing", action="store_true")
     parser.add_argument("--num_epochs", default=2145, type=int)
     parser.add_argument("--block_size", default=1024, type=int)
     parser.add_argument("--embedding_dimensions", default=1024, type=int)
     parser.add_argument("--num_attention_heads", default=16, type=int)
     parser.add_argument("--num_hidden_layers", default=24, type=int)
+    parser.add_argument("--activation_checkpointing", action="store_true")
     parser.add_argument("--eval_interval", default=10, type=int)
     parser.add_argument("--checkpoint_interval", default=20, type=int)
     parser.add_argument("--checkpoint_path", default="./out/checkpoint.pt", type=str)
@@ -88,17 +88,15 @@ def main():
             f"Checkpoint interval must be greater than 0, {args.checkpoint_interval} given."
         )
 
-    if "cuda" in args.device and not cuda_is_available():
-        raise RuntimeError("Cuda is not available.")
-
-    torch.set_float32_matmul_precision("high")
-
     if IS_DDP:
         init_process_group(backend=DDP_BACKEND, world_size=WORLD_SIZE)
 
         args.device = f"cuda:{LOCAL_RANK}"
 
         set_device(args.device)
+
+        if args.seed:
+            args.seed += RANK
 
         if args.gradient_accumulation_steps % WORLD_SIZE != 0:
             warnings.warn(
@@ -124,8 +122,10 @@ def main():
             args.samples_per_epoch > 0
         ), "World size is larger than the number of samples per epoch."
 
-        if args.seed:
-            args.seed += RANK
+    torch.set_float32_matmul_precision("high")
+
+    if "cuda" in args.device and not cuda_is_available():
+        raise RuntimeError("Cuda is not available.")
 
     dtype = (
         torch.bfloat16
@@ -173,15 +173,13 @@ def main():
         "eos_index": training.eos_index,
     }
 
-    model = GPT(**model_args).to(args.device)
+    model = GPT(**model_args)
 
     if IS_DDP:
         model = DistributedDataParallel(model, device_ids=[LOCAL_RANK])
 
     print("Compiling model")
-    model = torch.compile(model)
-
-    print(f"Model has {model.num_trainable_params:,} trainable parameters")
+    model = torch.compile(model).to(args.device)
 
     if IS_DDP:
         optimizer = ZeroRedundancyOptimizer(
@@ -196,18 +194,22 @@ def main():
 
     if args.resume:
         checkpoint = torch.load(
-            args.checkpoint_path, map_location=args.device, weights_only=True
-        )
+            args.checkpoint_path, map_location="cpu", weights_only=True
+        )  # Always load into RAM first to prevent CUDA out-of-memory errors.
 
         model.load_state_dict(checkpoint["model"])
         optimizer.load_state_dict(checkpoint["optimizer"])
         starting_epoch += checkpoint["epoch"]
 
+        model = model.to(args.device)  # Push the restored tensors to the device
+
         print("Previous checkpoint resumed successfully")
 
-    perplexity_metric = Perplexity(ignore_index=training.PADDING_INDEX).to(args.device)
-
     model.train()
+
+    print(f"Model has {model.num_trainable_params:,} trainable parameters")
+
+    perplexity_metric = Perplexity(ignore_index=training.PADDING_INDEX).to(args.device)
 
     signal.signal(signal.SIGTERM, on_sigterm)
 
@@ -282,11 +284,10 @@ def main():
 
         if epoch % args.checkpoint_interval == 0 and IS_MASTER:
             checkpoint = {
+                "epoch": epoch,
+                "model_args": model_args,
                 "model": model.state_dict(),
                 "optimizer": optimizer.state_dict(),
-                "model_args": model_args,
-                "epoch": epoch,
-                "seed": args.seed,
             }
 
             torch.save(checkpoint, args.checkpoint_path)
