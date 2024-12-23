@@ -195,13 +195,13 @@ def main():
     if args.resume:
         checkpoint = torch.load(
             args.checkpoint_path, map_location="cpu", weights_only=True
-        )  # Always load into RAM first to prevent CUDA out-of-memory errors.
+        )  # Always load into CPU RAM first to prevent CUDA out-of-memory errors.
 
         model.load_state_dict(checkpoint["model"])
         optimizer.load_state_dict(checkpoint["optimizer"])
         starting_epoch += checkpoint["epoch"]
 
-        model = model.to(args.device)  # Push the restored tensors to the device
+        model = model.to(args.device)
 
         print("Previous checkpoint resumed successfully")
 

@@ -13,7 +13,7 @@ from torch.nn import (
     Embedding,
     MultiheadAttention,
     Linear,
-    LayerNorm,
+    RMSNorm,
     GELU,
     Dropout1d,
     CrossEntropyLoss,
@@ -61,6 +61,11 @@ class GPT(Module):
 
         self.token_embeddings = token_embeddings
 
+        causal_mask = torch.full((block_size, block_size), float("-inf"))
+        causal_mask = torch.triu(causal_mask, diagonal=1)
+
+        self.causal_mask = Buffer(causal_mask, persistent=False)
+
         self.body = ModuleList(
             [
                 CausalSelfAttentionBlock(
@@ -70,19 +75,13 @@ class GPT(Module):
             ]
         )
 
-        self.output_norm = LayerNorm(embedding_dimensions, bias=False)
-        self.output_layer = output_layer
-
-        causal_mask = torch.tril(torch.ones((block_size, block_size)))
-        causal_mask = causal_mask.masked_fill(causal_mask == 0, float("-Inf"))
-        causal_mask = causal_mask.masked_fill(causal_mask == 1, 0.0)
-
-        self.causal_mask = Buffer(causal_mask, persistent=False)
-
         if activation_checkpointing:
             self.checkpoint = partial(checkpoint, use_reentrant=False)
         else:
             self.checkpoint = lambda layer, x, attention_mask: layer(x, attention_mask)
+
+        self.output_norm = RMSNorm(embedding_dimensions)
+        self.output_layer = output_layer
 
         self.loss_function = CrossEntropyLoss(ignore_index=padding_index)
 
@@ -400,7 +399,7 @@ class CausalSelfAttentionBlock(Module):
         if dropout < 0 or dropout > 1:
             raise ValueError(f"Dropout must be between 0 and 1, {dropout} given")
 
-        self.norm1 = LayerNorm(embedding_dimensions, bias=False)
+        self.norm1 = RMSNorm(embedding_dimensions)
         self.attention = MultiheadAttention(
             embedding_dimensions,
             num_heads,
@@ -409,7 +408,7 @@ class CausalSelfAttentionBlock(Module):
             bias=False,
         )
 
-        self.norm2 = LayerNorm(embedding_dimensions, bias=False)
+        self.norm2 = RMSNorm(embedding_dimensions)
         self.mlp = MLP(embedding_dimensions, 4 * embedding_dimensions, dropout)
 
     def forward(self, x: Tensor, attention_mask: Tensor) -> Tensor:
