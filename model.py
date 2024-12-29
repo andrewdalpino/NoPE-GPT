@@ -98,7 +98,7 @@ class GPT(Module):
     ) -> tuple[Tensor, Tensor | None]:
         z = self.token_embeddings(x)
 
-        b, t, d = z.size()
+        b, t = x.size()
 
         causal_mask = self.causal_mask[:t, :t]
 
@@ -216,8 +216,14 @@ class GPT(Module):
             tokens: Tensor
 
             @property
-            def probability(self) -> float:
-                return exp(self.log_probability)
+            def priority(self) -> float:
+                return self.log_probability
+
+        sort_candidates = partial(
+            sorted,
+            key=lambda candidate: candidate.priority,
+            reverse=True,
+        )
 
         candidates, completed = [], []
 
@@ -229,11 +235,7 @@ class GPT(Module):
             candidate = candidates.pop()
 
             if len(completed) >= num_candidates:
-                completed = sorted(
-                    completed,
-                    key=lambda candidate: candidate.log_probability,
-                    reverse=True,
-                )
+                completed = sort_candidates(completed)
 
                 completed = completed[:num_candidates]
 
@@ -273,11 +275,7 @@ class GPT(Module):
 
                 candidates.append(Candidate(log_probability, tokens))
 
-            candidates = sorted(
-                candidates,
-                key=lambda candidate: candidate.log_probability,
-                reverse=True,
-            )
+            candidates = sort_candidates(candidates)
 
             candidates = candidates[:beam_width]
 

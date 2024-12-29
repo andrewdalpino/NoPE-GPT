@@ -45,18 +45,19 @@ def main():
     parser.add_argument("--learning_rate", default=1e-2, type=float)
     parser.add_argument("--max_gradient_norm", default=1.0, type=float)
     parser.add_argument("--dropout", default=0.1, type=float)
-    parser.add_argument("--num_epochs", default=2145, type=int)
+    parser.add_argument("--num_epochs", default=2140, type=int)
     parser.add_argument("--block_size", default=1024, type=int)
     parser.add_argument("--embedding_dimensions", default=1024, type=int)
     parser.add_argument("--num_attention_heads", default=16, type=int)
-    parser.add_argument("--num_hidden_layers", default=24, type=int)
+    parser.add_argument("--num_hidden_layers", default=32, type=int)
     parser.add_argument("--activation_checkpointing", action="store_true")
     parser.add_argument("--eval_interval", default=10, type=int)
     parser.add_argument("--checkpoint_interval", default=20, type=int)
     parser.add_argument("--checkpoint_path", default="./out/checkpoint.pt", type=str)
+    parser.add_argument("--checkpoint_history", action="store_true")
+    parser.add_argument("--resume", action="store_true")
     parser.add_argument("--dataset_path", default="./dataset", type=str)
     parser.add_argument("--num_dataset_processes", default=8, type=int)
-    parser.add_argument("--resume", action="store_true")
     parser.add_argument("--device", default="cuda", type=str)
     parser.add_argument("--seed", default=None, type=int)
 
@@ -167,13 +168,12 @@ def main():
         "num_heads": args.num_attention_heads,
         "num_layers": args.num_hidden_layers,
         "dropout": args.dropout,
-        "activation_checkpointing": args.activation_checkpointing,
         "vocabulary_size": training.vocabulary_size,
         "padding_index": training.PADDING_INDEX,
         "eos_index": training.eos_index,
     }
 
-    model = GPT(**model_args)
+    model = GPT(**model_args, activation_checkpointing=args.activation_checkpointing)
 
     if IS_DDP:
         model = DistributedDataParallel(model, device_ids=[LOCAL_RANK])
@@ -290,7 +290,14 @@ def main():
                 "optimizer": optimizer.state_dict(),
             }
 
-            torch.save(checkpoint, args.checkpoint_path)
+            if args.checkpoint_history:
+                root, ext = path.splitext(args.checkpoint_path)
+
+                checkpoint_path = f"{root}-{epoch}{ext}"
+            else:
+                checkpoint_path = args.checkpoint_path
+
+            torch.save(checkpoint, checkpoint_path)
 
             print("Checkpoint saved")
 

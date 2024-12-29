@@ -1,6 +1,6 @@
 # GPT
 
-A Generative Pre-trained Transformer (GPT) trained on the Openwebtext dataset. The default implementation uses `r50k_base` BPE tokenization with a network architecture similar to OpenAI's GPT series but can easily be customized and scaled up or down to meet your needs and compute budget with some parameter adjustments. In addition, you may incorporate your own training data alongside Openwebtext for additional pre-training samples or for fine-tuning for a specific task after pre-training. It also supports PyTorch's built-in Distributed Data Parallel (DDP) protocol with sharding for efficient training over multiple CUDA-enabled GPU clusters.
+A Generative Pre-trained Transformer (GPT) trained on the Openwebtext dataset. The default implementation uses `r50k_base` BPE tokenization with a network architecture similar to OpenAI's GPT series but can easily be customized and scaled up or down to meet your needs and compute budget with some parameter adjustments. In addition, you may incorporate your own training data alongside Openwebtext for additional pre-training samples or for fine-tuning for a specific task after pre-training. It also supports PyTorch's built-in Distributed Data Parallel (DDP) protocol with ZeRO Redundancy sharding for efficient training over multiple CUDA-enabled GPU clusters.
 
 ## Download the Repository
 Clone the project locally using git:

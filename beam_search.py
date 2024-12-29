@@ -88,7 +88,7 @@ def main():
         )
 
         for i, candidate in enumerate(candidates, start=1):
-            print(f"Sequence #{i} ({candidate.probability:.4}):")
+            print(f"Sequence #{i}")
 
             out = tokenizer.decode(candidate.tokens.tolist()).strip()
 
@@ -96,7 +96,7 @@ def main():
 
         print("\n")
 
-        if "y" not in input("Try again? (yes|no): ").lower():
+        if "y" not in input("Go again? (yes|no): ").lower():
             break
 
 
