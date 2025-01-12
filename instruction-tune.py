@@ -9,6 +9,7 @@ from torch.optim import Adafactor
 from torch.amp import autocast
 from torch.cuda import is_available as cuda_is_available, is_bf16_supported
 from torch.utils.data import random_split
+from torch.utils.tensorboard import SummaryWriter
 
 from torchmetrics.text import Perplexity
 
@@ -21,23 +22,30 @@ from tqdm import tqdm
 
 
 def main():
-    parser = ArgumentParser(description="Instruction-tune the foundation model.")
+    parser = ArgumentParser(description="Instruction-tune the GPT.")
 
-    parser.add_argument("--base_model_path", default="./out/checkpoint.pt", type=str)
+    parser.add_argument(
+        "--base_model_path", default="./checkpoints/checkpoint.pt", type=str
+    )
+    parser.add_argument("--max_tokens_per_sample", default=2048, type=int)
+    parser.add_argument("--mask_input", action="store_true")
     parser.add_argument("--batch_size", default=1, type=int)
-    parser.add_argument("--gradient_accumulation_steps", default=128, type=int)
-    parser.add_argument("--learning_rate", default=1e-2, type=float)
-    parser.add_argument("--mask_input", default=True, type=bool)
+    parser.add_argument("--gradient_accumulation_steps", default=64, type=int)
+    parser.add_argument("--learning_rate", default=5e-4, type=float)
+    parser.add_argument("--rms_decay", default=-0.8, type=float)
+    parser.add_argument("--optimizer_low_memory", default=True, type=bool)
+    parser.add_argument("--num_epochs", default=4, type=int)
     parser.add_argument("--rank", default=8, type=int)
     parser.add_argument("--alpha", default=1.0, type=float)
     parser.add_argument("--dropout", default=0.05, type=float)
-    parser.add_argument("--num_epochs", default=4, type=int)
+    parser.add_argument("--activation_checkpointing", action="store_true")
     parser.add_argument("--eval_interval", default=1, type=int)
     parser.add_argument("--checkpoint_interval", default=1, type=int)
     parser.add_argument(
-        "--checkpoint_path", default="./out/lora_instruction.pt", type=str
+        "--checkpoint_path", default="./checkpoints/lora_instruction.pt", type=str
     )
     parser.add_argument("--resume", action="store_true")
+    parser.add_argument("--run_dir_path", default="./runs/instruction-tune", type=str)
     parser.add_argument("--device", default="cuda", type=str)
     parser.add_argument("--seed", default=None, type=int)
 
@@ -54,11 +62,13 @@ def main():
         else torch.float32
     )
 
-    forward_context = autocast(device_type=args.device, dtype=dtype)
+    amp_context = autocast(device_type=args.device, dtype=dtype)
 
     if args.seed:
         torch.manual_seed(args.seed)
         random.seed(args.seed)
+
+    logger = SummaryWriter(args.run_dir_path)
 
     checkpoint = torch.load(
         args.base_model_path, map_location=args.device, weights_only=True
@@ -66,7 +76,13 @@ def main():
 
     model_args = checkpoint["model_args"]
 
-    dataset = Alpaca(model_args["block_size"], args.mask_input)
+    tokenizer = tiktoken.get_encoding(checkpoint["token_encoding"])
+
+    dataset = Alpaca(
+        tokenizer,
+        max_tokens_per_sample=args.max_tokens_per_sample,
+        mask_input=args.mask_input,
+    )
 
     training, testing = random_split(dataset, (0.9, 0.1))
 
@@ -87,6 +103,9 @@ def main():
 
     model = GPT(**model_args)
 
+    if args.activation_checkpointing:
+        model.enable_activation_checkpointing()
+
     model = torch.compile(model)
 
     model.load_state_dict(checkpoint["model"])
@@ -104,11 +123,12 @@ def main():
     print("Compiling model")
     model.compile()
 
-    print(f"Model has {model.num_trainable_params:,} trainable parameters")
-
-    optimizer = Adafactor(model.parameters(), lr=args.learning_rate)
-
-    perplexity_metric = Perplexity(ignore_index=dataset.PADDING_INDEX).to(args.device)
+    optimizer = Adafactor(
+        model.parameters(),
+        lr=args.learning_rate,
+        beta2_decay=args.rms_decay,
+        foreach=not args.optimizer_low_memory,
+    )
 
     starting_epoch = 1
 
@@ -125,6 +145,10 @@ def main():
 
     model.train()
 
+    print(f"Model has {model.num_trainable_params:,} trainable parameters")
+
+    perplexity_metric = Perplexity(ignore_index=dataset.PADDING_INDEX).to(args.device)
+
     print("Instruction-tuning ...")
 
     for epoch in range(starting_epoch, args.num_epochs + 1):
@@ -136,7 +160,7 @@ def main():
             x = x.to(args.device, non_blocking=True)
             y = y.to(args.device, non_blocking=True)
 
-            with forward_context:
+            with amp_context:
                 y_pred, loss = model(x, y)
 
                 scaled_loss = loss / args.gradient_accumulation_steps
@@ -153,6 +177,8 @@ def main():
             total_batches += 1
 
         average_cross_entropy = total_cross_entropy / total_batches
+
+        logger.add_scalar("cross entropy", average_cross_entropy, epoch)
 
         print(
             f"Epoch {epoch}: Cross Entropy: {average_cross_entropy:.5f}",
@@ -171,6 +197,8 @@ def main():
                 perplexity_metric.update(y_pred, y)
 
             perplexity = perplexity_metric.compute()
+
+            logger.add_scalar("perplexity", perplexity, epoch)
 
             print(f"Perplexity: {perplexity:.3f}")
 

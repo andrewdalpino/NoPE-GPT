@@ -1,6 +1,6 @@
-from math import sqrt, exp
-from dataclasses import dataclass, field
-from functools import partial
+from math import sqrt
+from dataclasses import dataclass
+from functools import partial, cached_property
 from typing import Iterator, Self
 
 import torch
@@ -13,43 +13,44 @@ from torch.nn import (
     Embedding,
     MultiheadAttention,
     Linear,
+    SiLU,
     RMSNorm,
-    GELU,
     Dropout1d,
     CrossEntropyLoss,
     Parameter,
-    Buffer,
 )
 
 from torch.nn.functional import softmax, log_softmax
 from torch.nn.utils.parametrize import register_parametrization, remove_parametrizations
-from torch.utils.checkpoint import checkpoint
+from torch.utils.checkpoint import checkpoint as torch_checkpoint
 
 
 class GPT(Module):
-    """A generative pre-trained transformer."""
+    """A generative pretrained transformer."""
 
     def __init__(
         self,
-        block_size: int = 1024,
-        embedding_dimensions: int = 1024,
-        num_heads: int = 16,
-        num_layers: int = 24,
-        dropout: float = 0.1,
-        activation_checkpointing: bool = False,
-        vocabulary_size: int = 50257,
-        padding_index: int = -100,
-        eos_index: int = 50256,
+        vocabulary_size: int,
+        embedding_dimensions: int,
+        num_heads: int,
+        num_layers: int,
+        feed_forward_ratio: int,
+        dropout: float,
+        padding_index: int,
+        eos_index: int,
     ):
         super().__init__()
+
+        if num_layers <= 0:
+            raise ValueError(f"Num layers must be greater than 0, {num_layers} given.")
+
+        if feed_forward_ratio not in (1, 2, 4):
+            raise ValueError("Feed-forward ratio must be either 1, 2, or 4.")
 
         if vocabulary_size <= 0:
             raise ValueError(
                 f"Vocabulary size must be greater than 0, {vocabulary_size} given."
             )
-
-        if num_layers <= 0:
-            raise ValueError(f"Num layers must be greater than 0, {num_layers} given.")
 
         token_embeddings = Embedding(
             vocabulary_size, embedding_dimensions, padding_idx=padding_index
@@ -61,24 +62,19 @@ class GPT(Module):
 
         self.token_embeddings = token_embeddings
 
-        causal_mask = torch.full((block_size, block_size), float("-inf"))
-        causal_mask = torch.triu(causal_mask, diagonal=1)
-
-        self.causal_mask = Buffer(causal_mask, persistent=False)
-
         self.body = ModuleList(
             [
                 CausalSelfAttentionBlock(
-                    embedding_dimensions, block_size, num_heads, dropout
+                    embedding_dimensions,
+                    num_heads,
+                    feed_forward_ratio,
+                    dropout,
                 )
                 for _ in range(num_layers)
             ]
         )
 
-        if activation_checkpointing:
-            self.checkpoint = partial(checkpoint, use_reentrant=False)
-        else:
-            self.checkpoint = lambda layer, x, attention_mask: layer(x, attention_mask)
+        self.checkpoint = lambda layer, x, attention_mask: layer(x, attention_mask)
 
         self.output_norm = RMSNorm(embedding_dimensions)
         self.output_layer = output_layer
@@ -86,21 +82,27 @@ class GPT(Module):
         self.loss_function = CrossEntropyLoss(ignore_index=padding_index)
 
         self.vocabulary_size = vocabulary_size
-        self.block_size = block_size
         self.eos_index = eos_index
 
-    @property
+    @cached_property
     def num_trainable_params(self) -> int:
         return sum(param.numel() for param in self.parameters() if param.requires_grad)
+
+    def enable_activation_checkpointing(self) -> None:
+        """Instead of memorizing the activations of the forward pass, recompute them at various checkpoints."""
+        self.checkpoint = partial(torch_checkpoint, use_reentrant=False)
 
     def forward(
         self, x: Tensor, y: Tensor | None = None
     ) -> tuple[Tensor, Tensor | None]:
+        """A forward pass optimized for batch training."""
+
         z = self.token_embeddings(x)
 
-        b, t = x.size()
+        b, t, d = z.size()
 
-        causal_mask = self.causal_mask[:t, :t]
+        causal_mask = torch.full((t, t), float("-inf"), dtype=z.dtype, device=z.device)
+        causal_mask = torch.triu(causal_mask, diagonal=1)
 
         for layer in self.body:
             z = self.checkpoint(layer, z, causal_mask)
@@ -109,6 +111,7 @@ class GPT(Module):
         z = self.output_layer(z)
 
         if y is not None:
+            # Flatten the batch dimension before calculating loss.
             y_pred = z.view(-1, z.size(-1))
             labels = y.view(-1)
 
@@ -119,17 +122,41 @@ class GPT(Module):
         return z, loss
 
     @torch.no_grad()
+    def predict(self, x: Tensor) -> Tensor:
+        """A forward pass optimized for batch next-token prediction."""
+
+        z = self.token_embeddings(x)
+
+        b, t, d = z.size()
+
+        causal_mask = torch.full((t, t), float("-inf"), dtype=z.dtype, device=z.device)
+        causal_mask = torch.triu(causal_mask, diagonal=1)
+
+        for layer in self.body:
+            z = layer(z, causal_mask)
+
+        z = self.output_norm(z)
+
+        # Pluck only the last token embedding from each batch.
+        z = z[:, -1, :]
+
+        z = self.output_layer(z)
+
+        return z
+
+    @torch.no_grad()
     def generate(
         self,
         prompt: Tensor,
-        max_tokens: int = 500,
+        max_tokens: int = 2000,
+        context_length: int = 1024,
         temperature: float = 1.0,
         top_k: int = 500,
         top_p: float = 0.9,
     ) -> Iterator:
         """
         Given a prompt, sample the next {max_tokens} tokens from the model weighted
-        by their predicted probabilities.
+        by their predicted probabilities and filtered by the {top_k} and {top_p}.
         """
 
         if max_tokens <= 0:
@@ -151,11 +178,9 @@ class GPT(Module):
         context_window = prompt
 
         for _ in range(max_tokens):
-            context_window = context_window[-self.block_size :]
+            context_window = context_window[-context_length:]
 
-            y_pred, _ = self.forward(context_window.unsqueeze(0))
-
-            logits = y_pred[0, -1, :]
+            logits = self.predict(context_window.unsqueeze(0)).squeeze()
 
             logits, indices = torch.topk(logits, top_k, sorted=True)
 
@@ -176,7 +201,7 @@ class GPT(Module):
 
             probabilities = softmax(logits, dim=0)
 
-            offset = torch.multinomial(probabilities, num_samples=1).squeeze(0)
+            offset = torch.multinomial(probabilities, num_samples=1).squeeze()
 
             next_token = indices[offset]
 
@@ -191,12 +216,15 @@ class GPT(Module):
     def beam_search(
         self,
         prompt: Tensor,
-        max_tokens: int = 200,
+        max_tokens: int = 100,
+        context_length: int = 1024,
         num_candidates: int = 3,
         beam_width: int = 16,
     ) -> list:
         """
-        Given a prompt, return the {num_candidates} highest probability sequences.
+        Given a prompt, return the {num_candidates} highest probability sequences. Note that
+        this method is often best for generating shorter sequences and is typically less
+        natural sounding than sequences that are more random in nature.
         """
 
         if max_tokens <= 0:
@@ -210,22 +238,22 @@ class GPT(Module):
         if beam_width <= 0:
             raise ValueError(f"Beam width must be greater than 0, {beam_width} given.")
 
-        @dataclass(order=True)
+        @dataclass
         class Candidate:
             log_probability: float
             tokens: Tensor
 
-            @property
             def priority(self) -> float:
                 return self.log_probability
 
         sort_candidates = partial(
             sorted,
-            key=lambda candidate: candidate.priority,
+            key=lambda candidate: candidate.priority(),
             reverse=True,
         )
 
-        candidates, completed = [], []
+        candidates: list[Candidate] = []
+        completed: list[Candidate] = []
 
         tokens = torch.tensor([], dtype=prompt.dtype).to(prompt.device)
 
@@ -258,11 +286,9 @@ class GPT(Module):
 
             context_window = torch.cat((prompt, candidate.tokens))
 
-            context_window = context_window[-self.block_size :]
+            context_window = context_window[-context_length:]
 
-            y_pred, _ = self.forward(context_window.unsqueeze(0))
-
-            logits = y_pred[0, -1, :]
+            logits = self.predict(context_window.unsqueeze(0)).squeeze()
 
             logits, indices = torch.topk(logits, beam_width, sorted=False)
 
@@ -284,13 +310,11 @@ class GPT(Module):
 
 class GPTWithLoRA(Module):
     """
-    A wrapper for pre-trained GPT models that applies a LoRA reparameterization
+    A wrapper for pretrained GPT models that applies a LoRA reparameterization
     to the intermediate layers of the network.
     """
 
-    def __init__(
-        self, model: GPT, rank: int = 8, alpha: float = 1.0, dropout: float = 0.05
-    ):
+    def __init__(self, model: GPT, rank: int, alpha: float, dropout: float):
         super().__init__()
 
         if rank <= 0:
@@ -350,36 +374,59 @@ class GPTWithLoRA(Module):
                 for name in lora_params:
                     remove_parametrizations(module, name, leave_parametrized=True)
 
-    def forward(
-        self, x: Tensor, y: Tensor | None = None
-    ) -> tuple[Tensor, Tensor | None]:
+    def forward(self, x: Tensor, y: Tensor) -> tuple[Tensor, Tensor]:
         return self.model.forward(x, y)
+
+    def predict(self, x: Tensor) -> Tensor:
+        return self.model.predict(x)
 
     def generate(
         self,
         prompt: Tensor,
-        max_tokens: int = 500,
+        max_tokens: int = 2000,
+        context_length: int = 1024,
         temperature: float = 1.0,
         top_k: int = 500,
         top_p: float = 0.9,
     ) -> Iterator:
-        return self.model.generate(prompt, max_tokens, temperature, top_k)
+        return self.model.generate(
+            prompt, max_tokens, context_length, temperature, top_k, top_p
+        )
 
     def beam_search(
         self,
         prompt: Tensor,
-        max_tokens: int = 200,
+        max_tokens: int = 100,
+        context_length: int = 1024,
         num_candidates: int = 3,
         beam_width: int = 16,
     ) -> list:
-        return self.model.beam_search(prompt, max_tokens, num_candidates, beam_width)
+        return self.model.beam_search(
+            prompt, max_tokens, context_length, num_candidates, beam_width
+        )
+
+
+class ONNXModel(Module):
+    """This wrapper provides a clean inferencing API for production models."""
+
+    def __init__(self, model: GPT | GPTWithLoRA):
+        super().__init__()
+
+        self.model = model
+
+    def forward(self, x: Tensor) -> Tensor:
+        return self.model.predict(x)
 
 
 class CausalSelfAttentionBlock(Module):
     """Causal self-attention block with residual connections."""
 
     def __init__(
-        self, embedding_dimensions: int, block_size: int, num_heads: int, dropout: float
+        self,
+        embedding_dimensions: int,
+        num_heads: int,
+        feed_forward_ratio: int,
+        dropout: float,
     ):
         super().__init__()
 
@@ -387,9 +434,6 @@ class CausalSelfAttentionBlock(Module):
             raise ValueError(
                 f"Embedding dimensions must be greater than 0, {embedding_dimensions} given."
             )
-
-        if block_size <= 0:
-            raise ValueError(f"Block size must be greater than 0, {block_size} given.")
 
         if num_heads <= 0:
             raise ValueError(f"Num heads must be greater than 0, {num_heads} given.")
@@ -406,8 +450,10 @@ class CausalSelfAttentionBlock(Module):
             bias=False,
         )
 
+        hidden_dimensions = feed_forward_ratio * embedding_dimensions
+
         self.norm2 = RMSNorm(embedding_dimensions)
-        self.mlp = MLP(embedding_dimensions, 4 * embedding_dimensions, dropout)
+        self.mlp = MLP(embedding_dimensions, hidden_dimensions, dropout)
 
     def forward(self, x: Tensor, attention_mask: Tensor) -> Tensor:
         z = self.norm1(x)
@@ -445,7 +491,7 @@ class MLP(Module):
 
         self.layers = Sequential(
             Linear(embedding_dimensions, hidden_dimensions, bias=False),
-            GELU(),
+            SiLU(),
             Linear(hidden_dimensions, embedding_dimensions, bias=False),
         )
 
