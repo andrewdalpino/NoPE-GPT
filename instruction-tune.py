@@ -161,7 +161,7 @@ def main():
             y = y.to(args.device, non_blocking=True)
 
             with amp_context:
-                y_pred, loss = model(x, y)
+                _, loss = model(x, y)
 
                 scaled_loss = loss / args.gradient_accumulation_steps
 

@@ -263,7 +263,7 @@ def main():
             y = y.to(args.device, non_blocking=True)
 
             with amp_context:
-                y_pred, loss = model(x, y)
+                y_pred, loss = model.forward(x, y)
 
                 scaled_loss = loss / args.gradient_accumulation_steps
 
@@ -311,7 +311,7 @@ def main():
                 y = y.to(args.device, non_blocking=True)
 
                 with torch.no_grad():
-                    y_pred, _ = model(x)
+                    y_pred, _ = model.forward(x, None)
 
                 perplexity_metric.update(y_pred, y)
 

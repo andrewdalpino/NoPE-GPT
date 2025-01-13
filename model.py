@@ -111,9 +111,8 @@ class GPT(Module):
         z = self.output_layer(z)
 
         if y is not None:
-            # Flatten the batch dimension before calculating loss.
             y_pred = z.view(-1, z.size(-1))
-            labels = y.view(-1)
+            labels = y.view(-1)  # Flatten the batch dimension.
 
             loss = self.loss_function(y_pred, labels)
         else:
@@ -137,8 +136,7 @@ class GPT(Module):
 
         z = self.output_norm(z)
 
-        # Pluck only the last token embedding from each batch.
-        z = z[:, -1, :]
+        z = z[:, -1, :]  # Pluck only the last token embedding from each batch.
 
         z = self.output_layer(z)
 
@@ -374,7 +372,9 @@ class GPTWithLoRA(Module):
                 for name in lora_params:
                     remove_parametrizations(module, name, leave_parametrized=True)
 
-    def forward(self, x: Tensor, y: Tensor) -> tuple[Tensor, Tensor]:
+    def forward(
+        self, x: Tensor, y: Tensor | None = None
+    ) -> tuple[Tensor, Tensor | None]:
         return self.model.forward(x, y)
 
     def predict(self, x: Tensor) -> Tensor:
