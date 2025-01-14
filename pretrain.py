@@ -24,7 +24,7 @@ from torchmetrics.text import Perplexity
 import tiktoken
 
 from data import Fineweb
-from model import GPT
+from model import LightGPT
 
 from tqdm import tqdm
 
@@ -194,7 +194,7 @@ def main():
         "eos_index": tokenizer.eot_token,
     }
 
-    model = GPT(**model_args)
+    model = LightGPT(**model_args)
 
     if args.activation_checkpointing:
         model.enable_activation_checkpointing()

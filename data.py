@@ -140,48 +140,54 @@ class Fineweb(IterableDataset):
             yield x, y
 
 
-class Alpaca(Dataset):
-    DATASET_NAME = "tatsu-lab/alpaca"
+class SmolTalk(Dataset):
+    DATASET_NAME = "HuggingFaceTB/smoltalk"
 
     PADDING_INDEX = -100
 
-    PROMPT_TEMPLATE = (
-        "Below is an instruction that describes a task. Write a response that "
-        "appropriately completes the request.\n\n"
-        "### Instruction:\n{instruction}\n\n"
-        "### Response:\n"
-    )
+    PROMPT_TEMPLATE = "<|im_start|>{role}\n{message}\n<|im_end|>"
 
-    PROMPT_TEMPLATE_WITH_INPUT = (
-        "Below is an instruction that describes a task, paired with an input "
-        "that provides further context. Write a response that appropriately "
-        "completes the request.\n\n"
-        "### Input:\n{input}\n\n"
-        "### Instruction:\n{instruction}\n\n"
-        "### Response:\n"
+    DEFAULT_SYSTEM_MESSAGE = PROMPT_TEMPLATE.format(
+        role="system",
+        message=(
+            "You are a knowledgeable and friendly AI assistant named Bonnie. "
+            "Your role is to help users by answering their questions, providing information, and offering guidance to the best of your abilities. "
+            "When responding, use a warm and professional tone, and break down complex topics into easy-to-understand explanations. "
+            "If you are unsure about an answer, it's okay to say you don't know rather than guessing."
+        ),
     )
-
-    RESPONSE_TEMPLATE = "{output}"
 
     def __init__(
         self,
         tokenizer: Encoding,
+        subset: str = "all",
         max_tokens_per_sample: int = 1024,
-        mask_input: bool = False,
     ):
         super().__init__()
+
+        if subset not in ("all", "smol-magpie-ultra"):
+            raise ValueError(f"Invalid subset, {subset} given.")
 
         if max_tokens_per_sample < 1:
             raise ValueError(
                 f"Max tokens per sample must be greater than 0, {max_tokens_per_sample} given."
             )
 
-        self.tokenizer = tokenizer
+        special_tokens = {
+            "<|im_start|>": tokenizer.n_vocab,
+            "<|im_end|>": tokenizer.n_vocab + 1,
+        }
 
-        self.dataset = load_dataset(self.DATASET_NAME, split="train")
+        self.tokenizer = Encoding(
+            name=tokenizer.name,
+            pat_str=tokenizer._pat_str,
+            mergeable_ranks=tokenizer._mergeable_ranks,
+            special_tokens={**tokenizer._special_tokens, **special_tokens},
+        )
+
+        self.dataset = load_dataset(self.DATASET_NAME, subset, split="train")
 
         self.max_tokens_per_sample = max_tokens_per_sample
-        self.mask_input = mask_input
 
     def collate(self, batch: list) -> tuple[Tensor, Tensor]:
         """Custom collate function adds left padding to batched samples."""
@@ -212,32 +218,22 @@ class Alpaca(Dataset):
     def __getitem__(self, index: int):
         row = self.dataset[index]
 
-        has_input = len(row["input"]) > 0
+        text = self.DEFAULT_SYSTEM_MESSAGE
 
-        if has_input:
-            text = self.PROMPT_TEMPLATE_WITH_INPUT.format(
-                input=row["input"], instruction=row["instruction"]
+        for message in row["messages"]:
+            text += "\n\n"
+
+            text += self.PROMPT_TEMPLATE.format(
+                role=message["role"],
+                message=message["content"],
             )
-        else:
-            text = self.PROMPT_TEMPLATE.format(instruction=row["instruction"])
-
-        tokens = self.tokenizer.encode_ordinary(text)
-
-        sample = deepcopy(tokens)
-
-        if self.mask_input:
-            labels = [self.PADDING_INDEX] * len(tokens)
-        else:
-            labels = deepcopy(tokens)
-
-        text = self.RESPONSE_TEMPLATE.format(output=row["output"])
 
         tokens = self.tokenizer.encode_ordinary(text)
 
         tokens.append(self.tokenizer.eot_token)
 
-        sample.extend(tokens)
-        labels.extend(tokens)
+        sample = deepcopy(tokens)
+        labels = deepcopy(tokens)
 
         end = min(len(sample), self.max_tokens_per_sample + 1)
 

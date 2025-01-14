@@ -25,7 +25,7 @@ from torch.nn.utils.parametrize import register_parametrization, remove_parametr
 from torch.utils.checkpoint import checkpoint as torch_checkpoint
 
 
-class GPT(Module):
+class LightGPT(Module):
     """A generative pretrained transformer."""
 
     def __init__(
@@ -306,13 +306,13 @@ class GPT(Module):
         return completed
 
 
-class GPTWithLoRA(Module):
+class LightGPTInstruct(Module):
     """
     A wrapper for pretrained GPT models that applies a LoRA reparameterization
     to the intermediate layers of the network.
     """
 
-    def __init__(self, model: GPT, rank: int, alpha: float, dropout: float):
+    def __init__(self, model: LightGPT, rank: int, alpha: float, dropout: float):
         super().__init__()
 
         if rank <= 0:
@@ -323,6 +323,15 @@ class GPTWithLoRA(Module):
 
         for param in model.parameters():
             param.requires_grad = False
+
+        model.token_embeddings.weight = Parameter(
+            torch.cat(
+                (
+                    model.token_embeddings.weight.data,
+                    torch.randn(2, model.token_embeddings.weight.size(dim=1)),
+                )
+            )
+        )
 
         for module in model.body:
             out_features, in_features = module.attention.in_proj_weight.shape
@@ -409,7 +418,7 @@ class GPTWithLoRA(Module):
 class ONNXModel(Module):
     """This wrapper provides a clean inferencing API for production models."""
 
-    def __init__(self, model: GPT | GPTWithLoRA):
+    def __init__(self, model: LightGPT | LightGPTInstruct):
         super().__init__()
 
         self.model = model

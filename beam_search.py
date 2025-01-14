@@ -7,8 +7,8 @@ import torch
 
 from torch.cuda import is_available as cuda_is_available
 
-from model import GPT, GPTWithLoRA
-from data import Alpaca
+from model import LightGPT, LightGPTInstruct
+from data import SmolTalk
 
 import tiktoken
 
@@ -46,7 +46,7 @@ def main():
 
     tokenizer = tiktoken.get_encoding(checkpoint["token_encoding"])
 
-    model = GPT(**checkpoint["model_args"])
+    model = LightGPT(**checkpoint["model_args"])
 
     model = torch.compile(model)
 
@@ -59,7 +59,7 @@ def main():
             args.lora_path, map_location=args.device, weights_only=True
         )
 
-        model = GPTWithLoRA(model, **checkpoint["lora_args"])
+        model = LightGPTInstruct(model, **checkpoint["lora_args"])
 
         model = torch.compile(model)
 
@@ -77,14 +77,7 @@ def main():
         prompt = input("Enter a prompt: ")
 
         if args.lora_path:
-            context = input("Additional context (leave blank for none): ")
-
-            if len(context) > 0:
-                prompt = Alpaca.PROMPT_TEMPLATE_WITH_INPUT.format(
-                    input=context, instruction=prompt
-                )
-            else:
-                prompt = Alpaca.PROMPT_TEMPLATE.format(instruction=prompt)
+            prompt = SmolTalk.PROMPT_TEMPLATE.format(role="user", message=prompt)
 
         prompt = tokenizer.encode_ordinary(prompt)
 

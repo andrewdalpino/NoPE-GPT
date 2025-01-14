@@ -13,8 +13,8 @@ from torch.utils.tensorboard import SummaryWriter
 
 from torchmetrics.text import Perplexity
 
-from model import GPT, GPTWithLoRA
-from data import Alpaca
+from model import LightGPT, LightGPTInstruct
+from data import SmolTalk
 
 import tiktoken
 
@@ -27,13 +27,13 @@ def main():
     parser.add_argument(
         "--base_model_path", default="./checkpoints/checkpoint.pt", type=str
     )
-    parser.add_argument("--max_tokens_per_sample", default=2048, type=int)
+    parser.add_argument("--max_tokens_per_sample", default=1048, type=int)
     parser.add_argument("--mask_input", action="store_true")
     parser.add_argument("--batch_size", default=1, type=int)
     parser.add_argument("--gradient_accumulation_steps", default=64, type=int)
     parser.add_argument("--learning_rate", default=5e-4, type=float)
     parser.add_argument("--rms_decay", default=-0.8, type=float)
-    parser.add_argument("--optimizer_low_memory", default=True, type=bool)
+    parser.add_argument("--optimizer_low_memory", action="store_true")
     parser.add_argument("--num_epochs", default=4, type=int)
     parser.add_argument("--rank", default=8, type=int)
     parser.add_argument("--alpha", default=1.0, type=float)
@@ -78,10 +78,10 @@ def main():
 
     tokenizer = tiktoken.get_encoding(checkpoint["token_encoding"])
 
-    dataset = Alpaca(
+    dataset = SmolTalk(
         tokenizer,
+        subset="all",
         max_tokens_per_sample=args.max_tokens_per_sample,
-        mask_input=args.mask_input,
     )
 
     training, testing = random_split(dataset, (0.9, 0.1))
@@ -101,7 +101,7 @@ def main():
         shuffle=False,
     )
 
-    model = GPT(**model_args)
+    model = LightGPT(**model_args)
 
     if args.activation_checkpointing:
         model.enable_activation_checkpointing()
@@ -118,7 +118,7 @@ def main():
         "dropout": args.dropout,
     }
 
-    model = GPTWithLoRA(model, **lora_args).to(args.device)
+    model = LightGPTInstruct(model, **lora_args).to(args.device)
 
     print("Compiling model")
     model.compile()
