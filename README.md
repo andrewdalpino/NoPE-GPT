@@ -2,7 +2,7 @@
 license: apache-2.0
 datasets:
 - HuggingFaceFW/fineweb
-- tatsu-lab/alpaca
+- HuggingFaceTB/smoltalk
 library_name: pytorch
 language:
 - en
@@ -14,7 +14,7 @@ tags:
 ---
 # LightGPT
 
-LightGPT is a lightweight generative pretrained Transformer (GPT) language model for the people! Built using PyTorch and trained on the Fineweb and Alpaca datasets, LightGPT can answer questions, follow instructions, summarize documents, chat, and more. Best of all, the model weights *and* code are fully open-source for you to customize, improve upon, and share with the world.
+LightGPT is a lightweight generative pretrained Transformer (GPT) language model for the people! Built using PyTorch and trained on the Fineweb and SmolTalk datasets, LightGPT can answer questions, follow instructions, summarize documents, chat, and more. Best of all, the model weights *and* code are fully open-source for you to customize, improve upon, and share with the world.
 
 ## Features
 
@@ -132,7 +132,7 @@ Then navigate to the dashboard using your favorite web browser.
 | Argument | Default | Type | Description |
 |---|---|---|---|
 | --base_model_path | "./checkpoints/checkpoint.pt" | string | The path to the base checkpoint on disk. |
-| --max_tokens_per_sample | 2048 | int | The maximum number of tokens to pack into a single training sequence. |
+| --max_tokens_per_sample | 1024 | int | The maximum number of tokens to pack into a single training sequence. |
 | --mask_input | False | bool | Should we mask the input part of the training sequences i.e. only train on the supervised  output? |
 | --batch_size | 1 | int | The number of samples to pass through the network at a time. |
 | --gradient_accumulation_steps | 64 | int | The number of batches to pass through the network before updating the weights. |
