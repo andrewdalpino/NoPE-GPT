@@ -24,8 +24,10 @@ from torch.nn.functional import softmax, log_softmax
 from torch.nn.utils.parametrize import register_parametrization, remove_parametrizations
 from torch.utils.checkpoint import checkpoint as torch_checkpoint
 
+from huggingface_hub import PyTorchModelHubMixin
 
-class LightGPT(Module):
+
+class LightGPT(Module, PyTorchModelHubMixin):
     """A generative pretrained transformer."""
 
     def __init__(
@@ -306,7 +308,7 @@ class LightGPT(Module):
         return completed
 
 
-class LightGPTInstruct(Module):
+class LightGPTInstruct(Module, PyTorchModelHubMixin):
     """
     A wrapper for pretrained GPT models that applies a LoRA reparameterization
     to the intermediate layers of the network.
@@ -416,7 +418,7 @@ class LightGPTInstruct(Module):
 
 
 class ONNXModel(Module):
-    """This wrapper provides a clean inferencing API for production models."""
+    """This wrapper provides a clean inferencing API for ONNX production models."""
 
     def __init__(self, model: LightGPT | LightGPTInstruct):
         super().__init__()

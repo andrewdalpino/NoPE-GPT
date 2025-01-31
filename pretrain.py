@@ -3,7 +3,7 @@ import random
 import signal
 import warnings
 
-from os import path, environ
+from os import environ
 from argparse import ArgumentParser
 from contextlib import nullcontext
 from functools import partial

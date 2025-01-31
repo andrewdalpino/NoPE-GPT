@@ -14,11 +14,11 @@ tags:
 ---
 # LightGPT
 
-LightGPT is a lightweight generative pretrained Transformer (GPT) language model for the people! Built using PyTorch and trained on the Fineweb and SmolTalk datasets, LightGPT can answer questions, follow instructions, summarize documents, chat, and more. Best of all, the model weights *and* code are fully open-source for you to customize, improve upon, and share with the world.
+LightGPT is a lightweight generative pretrained Transformer (GPT) language model for the people! Built using [PyTorch](https://pytorch.org/) and trained on HuggingFace's [Fineweb](https://huggingface.co/datasets/HuggingFaceFW/fineweb) and [SmolTalk](https://huggingface.co/datasets/HuggingFaceTB/smoltalk) datasets, LightGPT can answer questions, follow instructions, summarize documents, chat, and more. Best of all, the model weights *and* code are fully open-source for you to customize, improve upon, and share with the world.
 
 ## Features
 
-- **No positional embeddings**: LightGPT aims to be a more parsimonious model by completely removing positional embeddings from the architecture. This allows for a variable context length without complex model surgery. Despite having no positional embeddings (NoPE), LightGPT performs better at context length generalization than the best relative embeddings (ALiBi, RoPE, T5) offering good performance even at 2X of the trained context length.
+- **No positional embeddings**: LightGPT aims to be a more parsimonious model by completely removing positional embeddings from the architecture. This allows for a variable context length without complex model surgery. Despite having no positional embeddings (NoPE), LightGPT performs better at context length generalization than the best relative embeddings (ALiBi, RoPE, T5) offering good performance even when operating within 2X the trained context window.
 
 - **Low Memory Utilization**: LightGPT lets you progressively employ training-time memory optimizations such as fully-sharded data-parallel (FSDP), activation checkpointing, mixed precision, and low-memory optimizer updates that allow you to train larger models on smaller hardware.
 
@@ -26,7 +26,7 @@ LightGPT is a lightweight generative pretrained Transformer (GPT) language model
 
 ## Suggested Pretraining Configurations
 
-Below is a table of some suggested pretraining configurations but feel free to experiment with settings on your own. See the `model_sizing.ipynb` notebook to estimate the memory and compute requirements for your model configuration.
+Below is a table of some suggested model pretraining configurations but feel free to experiment with settings on your own. See the `model_sizing.ipynb` notebook to estimate the memory and compute requirements for your model configuration.
 
 | Name | Vocab. Size | Embedding Dim. | Attn. Heads | Layers | Parameters | Training Tokens |
 |---|---|---|---|---|---|---|
@@ -39,7 +39,7 @@ Below is a table of some suggested pretraining configurations but feel free to e
 
 We typically recommend a training `block size` (also referred to as context length) of between 1024 to 4096 for standard models and 4096 or higher for long-context applications such as conversational chatbots, retrieval augmented generation, and chain-of-thought prompting.
 
-**Note**: LightGPT can be trained using variable block sizes since the architecture does not depend on any discrete positional embeddings. This flexibility allows you to gradually extend the context length.
+**Note**: LightGPT can be trained using variable block sizes since the architecture does not depend on any discrete positional embeddings. This flexibility allows you to progressively extend the context window during training.
 
 ## Install Project Dependencies
 
@@ -91,19 +91,19 @@ torchrun --standalone --nnodes=1 --nproc-per-node=8 pretrain.py --batch_size=16 
 | --token_encoding | "r50k_base" | str | The Tiktoken encoding scheme to use when tokenizing the dataset. Options include `r50k_base`, `p50k_base`, `cl100k_base`, and `o200k_base`. |
 | --dataset_path | "./datasets" | str | The path to the preprocessed dataset files on disk. |
 | --num_dataset_processes | 8 | int | The number of processes (CPUs) to use to process the dataset. |
-| --batch_size | 1 | int | The number of samples to pass through the network at a time. |
-| --gradient_accumulation_steps | 128 | int | The number of batches to pass through the network before updating the weights. |
-| --tokens_per_sample | 1024 | int | The number of tokens to pack into a single training sequence. This is sometimes called the context length or block size. |
+| --batch_size | 1 | int | The number of samples of size `tokens_per_sample` to pass through the network at a time. |
+| --gradient_accumulation_steps | 128 | int | The number of batches to pass through the network before updating the model weights. |
+| --tokens_per_sample | 1024 | int | The number of tokens to pack into a single training sequence. This is sometimes called the block size or context length. |
 | --samples_per_epoch | 4096 | int | The number of training samples to pass through the network every epoch. |
 | --num_epochs | 1686 | int | The number of epochs to train for. |
 | --learning_rate | 1e-2 | float | The learning rate of the Adafactor optimizer. |
 | --rms_decay | -0.8 | float | The decay rate of the RMS coefficient of the Adafactor optimizer. |
 | --low_memory_optimizer | False | bool | Should the optimizer reduce its memory consumption in exchange for a slightly slower runtime? |
-| --max_gradient_norm | 1.0 | float | Clip gradients above this threshold before stepping. |
+| --max_gradient_norm | 1.0 | float | Clip gradients above this threshold norm before stepping. |
 | --eval_interval | 10 | int | Evaluate the model after this many epochs on the testing set. |
 | --embedding_dimensions | 1024 | int | The dimensionality of the token embeddings. |
-| --num_attention_heads | 16 | int | The number of attention heads within every block. |
-| --num_hidden_layers | 24 | int | The number of attention/MLP blocks within the hidden layer of the network. |
+| --num_attention_heads | 16 | int | The number of attention heads within every attention layer. |
+| --num_hidden_layers | 24 | int | The number of attention/MLP blocks within the body of the network. |
 | --feed_forward_ratio | 4 | (1, 2, 4) | The ratio of hidden neurons to embedding dimensions in the MLP layers of the network. |
 | --dropout | 0.1 | float | The proportion of signals to send to zero during training as regularization. |
 | --activation_checkpointing | False | bool | Should we use activation checkpointing? This will drastically reduce memory utilization during training at the cost of recomputing the forward pass. |
@@ -117,7 +117,7 @@ torchrun --standalone --nnodes=1 --nproc-per-node=8 pretrain.py --batch_size=16 
 
 ### Training Dashboard
 
-We use TensorBoard to capture and display pretraining events such as loss and gradient norm updates. To launch the dashboard server run the following command from the terminal.
+We use [TensorBoard](https://www.tensorflow.org/tensorboard) to capture and display pretraining events such as loss and gradient norm updates. To launch the dashboard server run the following command from the terminal.
 
 ```
 tensorboard --logdir=./runs
@@ -174,7 +174,7 @@ python generate.py --top_k=500 --top_p=0.9
 | --device | "cuda" | string | The device to run the computation on. |
 | --seed | None | int | The seed for the random number generator. |
 
-We also provide a script that samples entire sequences rather than single tokens independently which we call `beam_search.py`. Beam Search maintains a list of the top `beam_width` sequence candidates and outputs the top `num_candidates` completed sequences with the highest overall priority. It is a form of greedy search that works well for some things like text summarization and translation but often results in less natural responses as natural language follows a more stochastic process.
+We also provide a script that samples entire sequences rather than single tokens independently which we call `beam_search.py`. Beam search maintains a list of the top `beam_width` candidate sequences and outputs the top `num_candidates` completed sequences with the highest overall priority. It is a form of greedy search that works well for some things like text summarization and translation but often results in less natural sounding responses and may even repeat certain sequences.
 
 ```
 python beam_search.py --beam_width=16 --num_candidates=3
@@ -194,7 +194,8 @@ python beam_search.py --beam_width=16 --num_candidates=3
 | --seed | None | int | The seed for the random number generator. |
 
 ## References:
->- G. Penedo, et al. The FineWeb Datasts: Decanting the Web for the Finest Text Data at Scale, 38th Conference on Neural Information Processing Systems (NeurIPS 2024) Track on Datasets and Benchmarks.
+>- G. Penedo, et al. The FineWeb Datasets: Decanting the Web for the Finest Text Data at Scale, 38th Conference on Neural Information Processing Systems (NeurIPS 2024) Track on Datasets and Benchmarks.
+>- L. B. Allal, et al. SmolLM2 - with great data, comes great performance, 2024.
 >- A. Radford, et al. Language Models are Unsupervised Multitask Learners, OpenAI, 2019.
 >- T. Brown, et al. Language Models are Few-Shot Learners. OpenAI, 2020.
 >- A. Kazemnejad, et al. The Impact of Positional Encoding on Length Generalization in Transformers, 37th Conference on Neural Information Processing Systems (NeurIPS 2023).
