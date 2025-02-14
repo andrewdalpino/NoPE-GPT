@@ -165,7 +165,13 @@ class SmolTalk(Dataset):
     ):
         super().__init__()
 
-        if subset not in {"all", "smol-magpie-ultra"}:
+        if subset not in {
+            "all",
+            "smol-magpie-ultra",
+            "smol-constraints",
+            "smol-rewrite",
+            "smol-summarize",
+        }:
             raise ValueError(f"Invalid subset, {subset} given.")
 
         if max_tokens_per_sample < 1:

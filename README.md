@@ -118,6 +118,7 @@ Then navigate to the dashboard using your favorite web browser.
 | Argument | Default | Type | Description |
 |---|---|---|---|
 | --base_model_path | "./checkpoints/checkpoint.pt" | string | The path to the base checkpoint on disk. |
+| --dataset_subset | "all" | str | The subset of the SmolTalk dataset to train on. Options are `all`, `smol-magpie-ultra`, `smol-constraints`, `smol-rewrite`, and `smol-summarize`. |
 | --max_tokens_per_sample | 1024 | int | The maximum number of tokens to pack into a single training sequence. |
 | --mask_input | False | bool | Should we mask the input part of the training sequences i.e. only train on the supervised  output? |
 | --batch_size | 1 | int | The number of samples to pass through the network at a time. |
