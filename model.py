@@ -46,7 +46,7 @@ class LightGPT(Module, PyTorchModelHubMixin):
         if num_layers <= 0:
             raise ValueError(f"Num layers must be greater than 0, {num_layers} given.")
 
-        if feed_forward_ratio not in (1, 2, 4):
+        if feed_forward_ratio not in {1, 2, 4}:
             raise ValueError("Feed-forward ratio must be either 1, 2, or 4.")
 
         if vocabulary_size <= 0:

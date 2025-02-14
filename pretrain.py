@@ -45,12 +45,12 @@ def main():
     parser.add_argument(
         "--dataset_subset",
         default="sample-10BT",
-        choices=("sample-10BT", "sample-100BT", "sample-350BT", None),
+        choices={"sample-10BT", "sample-100BT", "sample-350BT", None},
     )
     parser.add_argument(
         "--token_encoding",
         default="r50k_base",
-        choices=("r50k_base", "p50k_base", "cl100k_base", "o200k_base"),
+        choices={"r50k_base", "p50k_base", "cl100k_base", "o200k_base"},
     )
     parser.add_argument("--dataset_path", default="./datasets", type=str)
     parser.add_argument("--num_dataset_processes", default=8, type=int)
@@ -67,9 +67,9 @@ def main():
     parser.add_argument("--embedding_dimensions", default=1024, type=int)
     parser.add_argument("--num_attention_heads", default=16, type=int)
     parser.add_argument("--num_hidden_layers", default=24, type=int)
-    parser.add_argument("--feed_forward_ratio", default=4, choices=(1, 2, 4))
+    parser.add_argument("--feed_forward_ratio", default=4, choices={1, 2, 4})
     parser.add_argument("--activation_checkpointing", action="store_true")
-    parser.add_argument("--ddp_sharding_level", default=2, choices=(0, 2, 3))
+    parser.add_argument("--ddp_sharding_level", default=2, choices={0, 2, 3})
     parser.add_argument("--eval_interval", default=10, type=int)
     parser.add_argument("--checkpoint_interval", default=20, type=int)
     parser.add_argument(

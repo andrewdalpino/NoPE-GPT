@@ -27,6 +27,11 @@ def main():
     parser.add_argument(
         "--base_model_path", default="./checkpoints/checkpoint.pt", type=str
     )
+    parser.add_argument(
+        "--dataset_subset",
+        default="all",
+        choices={"all", "smol-magpie-ultra"},
+    )
     parser.add_argument("--max_tokens_per_sample", default=1048, type=int)
     parser.add_argument("--mask_input", action="store_true")
     parser.add_argument("--batch_size", default=1, type=int)
@@ -80,7 +85,7 @@ def main():
 
     dataset = SmolTalk(
         tokenizer,
-        subset="all",
+        subset=args.dataset_subset,
         max_tokens_per_sample=args.max_tokens_per_sample,
     )
 

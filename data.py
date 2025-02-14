@@ -38,10 +38,10 @@ class Fineweb(IterableDataset):
         super().__init__()
 
         if subset != None:
-            if subset not in ("sample-10BT", "sample-100BT", "sample-350BT"):
+            if subset not in {"sample-10BT", "sample-100BT", "sample-350BT"}:
                 raise ValueError(f"Invalid subset, {subset} given.")
 
-        if split not in ("train", "test"):
+        if split not in {"train", "test"}:
             raise ValueError(f"Split must be either train or test, {split} given.")
 
         if tokens_per_sample < 1:
@@ -165,7 +165,7 @@ class SmolTalk(Dataset):
     ):
         super().__init__()
 
-        if subset not in ("all", "smol-magpie-ultra"):
+        if subset not in {"all", "smol-magpie-ultra"}:
             raise ValueError(f"Invalid subset, {subset} given.")
 
         if max_tokens_per_sample < 1:
