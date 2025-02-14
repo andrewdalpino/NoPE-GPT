@@ -125,7 +125,7 @@ class Fineweb(IterableDataset):
         }
 
     def __iter__(self):
-        for i in range(self.samples_per_epoch):
+        for _ in range(self.samples_per_epoch):
             start = random.randint(0, self.max_start)
             end = start + self.tokens_per_sample
 
@@ -145,17 +145,7 @@ class SmolTalk(Dataset):
 
     PADDING_INDEX = -100
 
-    PROMPT_TEMPLATE = "<|im_start|>{role}\n{message}\n<|im_end|>"
-
-    DEFAULT_SYSTEM_MESSAGE = PROMPT_TEMPLATE.format(
-        role="system",
-        message=(
-            "You are a knowledgeable and friendly AI assistant named Bonnie. "
-            "Your role is to help users by answering their questions, providing information, and offering guidance to the best of your abilities. "
-            "When responding, use a warm and professional tone, and break down complex topics into easy-to-understand explanations. "
-            "If you are unsure about an answer, it's okay to say you don't know rather than guessing."
-        ),
-    )
+    PROMPT_TEMPLATE = "<|im_start|>{role}\n{message}\n<|im_end|>\n"
 
     def __init__(
         self,
@@ -166,11 +156,11 @@ class SmolTalk(Dataset):
         super().__init__()
 
         if subset not in {
-            "all",
             "smol-magpie-ultra",
             "smol-constraints",
             "smol-rewrite",
             "smol-summarize",
+            "all",
         }:
             raise ValueError(f"Invalid subset, {subset} given.")
 
@@ -224,11 +214,9 @@ class SmolTalk(Dataset):
     def __getitem__(self, index: int):
         row = self.dataset[index]
 
-        text = self.DEFAULT_SYSTEM_MESSAGE
+        text = ""
 
         for message in row["messages"]:
-            text += "\n\n"
-
             text += self.PROMPT_TEMPLATE.format(
                 role=message["role"],
                 message=message["content"],
@@ -236,15 +224,13 @@ class SmolTalk(Dataset):
 
         tokens = self.tokenizer.encode_ordinary(text)
 
-        tokens.append(self.tokenizer.eot_token)
+        tokens = tokens[: self.max_tokens_per_sample + 1]
 
         sample = deepcopy(tokens)
         labels = deepcopy(tokens)
 
-        end = min(len(sample), self.max_tokens_per_sample + 1)
-
-        x = torch.tensor(sample[0 : end - 1], dtype=torch.int64)
-        y = torch.tensor(labels[1:end], dtype=torch.int64)
+        x = torch.tensor(sample[:-1], dtype=torch.int64)
+        y = torch.tensor(labels[1:], dtype=torch.int64)
 
         assert x.shape == y.shape, "Sample / label shape mismatch."
 

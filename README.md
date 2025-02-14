@@ -4,7 +4,7 @@ LightGPT is a lightweight generative pretrained Transformer (GPT) language model
 
 ## Features
 
-- **No positional embeddings**: LightGPT aims to be a more parsimonious model by completely removing positional embeddings from the architecture. This allows for a variable context length without complex model surgery. Despite having no positional embeddings (NoPE), LightGPT performs better at context length generalization than the best relative embeddings (ALiBi, RoPE, T5) offering good performance even when operating within 2X the trained context window.
+- **No positional embeddings (NoPE)**: LightGPT aims to be a more parsimonious model by completely removing positional embeddings from the architecture. This allows for a variable context length without complex model surgery. Despite having no positional embeddings, LightGPT performs better at context length generalization than the best relative embeddings (ALiBi, RoPE, T5) offering good performance even when operating within 2X the trained context window.
 
 - **Low Memory Utilization**: LightGPT lets you progressively employ training-time memory optimizations such as fully-sharded data-parallel (FSDP), activation checkpointing, mixed precision, and low-memory optimizer updates that allow you to train larger models on smaller hardware.
 
@@ -14,7 +14,7 @@ LightGPT is a lightweight generative pretrained Transformer (GPT) language model
 
 Below is a table of some suggested model pretraining configurations but feel free to experiment with settings on your own. See the `model_sizing.ipynb` notebook to estimate the memory and compute requirements for your model configuration.
 
-| Name | Vocab. Size | Embedding Dim. | Attn. Heads | Layers | Parameters | Training Tokens |
+| Name | Vocab. Size | Embedding Dim. | Attn. Heads | Layers | Parameters | Min. Training Tokens |
 |---|---|---|---|---|---|---|
 | Small | 50,257 | 1024 | 16 | 24 | 353M | 7B |
 | Medium | 50,257 | 2048 | 32 | 32 | 1.7B | 34B |
@@ -23,7 +23,7 @@ Below is a table of some suggested model pretraining configurations but feel fre
 | XX-large | 200,017 | 8192 | 128 | 64 | 53B | 1T |
 | XXX-large | 200,017 | 8192 | 128 | 128 | 105B | 2T |
 
-We typically recommend a training `block size` (also referred to as context length) of between 1024 to 4096 for standard models and 4096 or higher for long-context applications such as conversational chatbots, retrieval augmented generation, and chain-of-thought prompting.
+We typically recommend a training `block size` (also referred to as context length) of between 1024 to 4096 for standard models and 4096 or higher for long-context applications such as conversational chatbots, retrieval augmented generation (RAG), and chain-of-thought (CoT) prompting.
 
 **Note**: LightGPT can be trained using variable block sizes since the architecture does not depend on any discrete positional embeddings. This flexibility allows you to progressively extend the context window during training.
 
