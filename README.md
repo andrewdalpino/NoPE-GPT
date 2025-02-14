@@ -1,17 +1,3 @@
----
-license: apache-2.0
-datasets:
-- HuggingFaceFW/fineweb
-- HuggingFaceTB/smoltalk
-library_name: pytorch
-language:
-- en
-metrics:
-- perplexity
-pipeline_tag: text-generation
-tags:
-- NoPE
----
 # LightGPT
 
 LightGPT is a lightweight generative pretrained Transformer (GPT) language model for the people! Built using [PyTorch](https://pytorch.org/) and trained on HuggingFace's [Fineweb](https://huggingface.co/datasets/HuggingFaceFW/fineweb) and [SmolTalk](https://huggingface.co/datasets/HuggingFaceTB/smoltalk) datasets, LightGPT can answer questions, follow instructions, summarize documents, chat, and more. Best of all, the model weights *and* code are fully open-source for you to customize, improve upon, and share with the world.
