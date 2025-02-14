@@ -47,7 +47,7 @@ def main():
     parser.add_argument("--eval_interval", default=1, type=int)
     parser.add_argument("--checkpoint_interval", default=1, type=int)
     parser.add_argument(
-        "--checkpoint_path", default="./checkpoints/lora_instruction.pt", type=str
+        "--checkpoint_path", default="./checkpoints/lora_instruct.pt", type=str
     )
     parser.add_argument("--resume", action="store_true")
     parser.add_argument("--run_dir_path", default="./runs/instruction-tune", type=str)
