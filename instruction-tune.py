@@ -29,8 +29,14 @@ def main():
     )
     parser.add_argument(
         "--dataset_subset",
-        default="all",
-        choices={"all", "smol-magpie-ultra"},
+        default="smol-magpie-ultra",
+        choices={
+            "smol-magpie-ultra",
+            "smol-constraints",
+            "smol-rewrite",
+            "smol-summarize",
+            "all",
+        },
     )
     parser.add_argument("--max_tokens_per_sample", default=1048, type=int)
     parser.add_argument("--mask_input", action="store_true")

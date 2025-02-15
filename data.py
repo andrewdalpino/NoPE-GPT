@@ -150,7 +150,7 @@ class SmolTalk(Dataset):
     def __init__(
         self,
         tokenizer: Encoding,
-        subset: str = "all",
+        subset: str = "smol-magpie-ultra",
         max_tokens_per_sample: int = 1024,
     ):
         super().__init__()
