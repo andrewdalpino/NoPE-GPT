@@ -18,6 +18,8 @@ from data import SmolTalk
 
 import tiktoken
 
+from tiktoken import Encoding
+
 from tqdm import tqdm
 
 
@@ -38,8 +40,8 @@ def main():
             "all",
         },
     )
+    parser.add_argument("--num_dataset_processes", default=4, type=int)
     parser.add_argument("--max_tokens_per_sample", default=1048, type=int)
-    parser.add_argument("--mask_input", action="store_true")
     parser.add_argument("--batch_size", default=1, type=int)
     parser.add_argument("--gradient_accumulation_steps", default=64, type=int)
     parser.add_argument("--learning_rate", default=5e-4, type=float)
@@ -89,13 +91,25 @@ def main():
 
     tokenizer = tiktoken.get_encoding(checkpoint["token_encoding"])
 
+    special_tokens = {
+        "<|im_start|>": tokenizer.n_vocab,
+        "<|im_end|>": tokenizer.n_vocab + 1,
+    }
+
+    tokenizer = Encoding(
+        name=tokenizer.name,
+        pat_str=tokenizer._pat_str,
+        mergeable_ranks=tokenizer._mergeable_ranks,
+        special_tokens={**tokenizer._special_tokens, **special_tokens},
+    )
+
     dataset = SmolTalk(
         tokenizer,
         subset=args.dataset_subset,
         max_tokens_per_sample=args.max_tokens_per_sample,
     )
 
-    training, testing = random_split(dataset, (0.9, 0.1))
+    training, testing = random_split(dataset, (0.95, 0.05))
 
     train_loader = DataLoader(
         training,
@@ -103,6 +117,7 @@ def main():
         batch_size=args.batch_size,
         pin_memory="cpu" not in args.device,
         shuffle=True,
+        num_workers=args.num_dataset_processes,
     )
     test_loader = DataLoader(
         testing,
@@ -110,6 +125,7 @@ def main():
         batch_size=args.batch_size,
         pin_memory="cpu" not in args.device,
         shuffle=False,
+        num_workers=args.num_dataset_processes,
     )
 
     model = LightGPT(**model_args)

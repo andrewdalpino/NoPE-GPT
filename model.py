@@ -326,14 +326,16 @@ class LightGPTInstruct(Module, PyTorchModelHubMixin):
         for param in model.parameters():
             param.requires_grad = False
 
-        model.token_embeddings.weight = Parameter(
+        model.output_layer.weight = Parameter(
             torch.cat(
                 (
-                    model.token_embeddings.weight.data,
-                    torch.randn(2, model.token_embeddings.weight.size(dim=1)),
+                    model.output_layer.weight,
+                    torch.randn(2, model.output_layer.weight.size(dim=1)),
                 )
             )
         )
+
+        model.token_embeddings.weight = model.output_layer.weight
 
         for module in model.body:
             out_features, in_features = module.attention.in_proj_weight.shape

@@ -145,7 +145,15 @@ class SmolTalk(Dataset):
 
     PADDING_INDEX = -100
 
-    PROMPT_TEMPLATE = "<|im_start|>{role}\n{message}\n<|im_end|>\n"
+    PROMPT_TEMPLATE = "<|im_start|>{role}\n{message}\n<|im_end|>"
+
+    REWRITE_SYSTEM_MESSAGE = PROMPT_TEMPLATE.format(
+        role="system",
+        message=(
+            "You're an AI assistant for text re-writing. "
+            "Rewrite the input text to make it more concise while preserving its core meaning."
+        ),
+    )
 
     def __init__(
         self,
@@ -168,18 +176,8 @@ class SmolTalk(Dataset):
             raise ValueError(
                 f"Max tokens per sample must be greater than 0, {max_tokens_per_sample} given."
             )
-
-        special_tokens = {
-            "<|im_start|>": tokenizer.n_vocab,
-            "<|im_end|>": tokenizer.n_vocab + 1,
-        }
-
-        self.tokenizer = Encoding(
-            name=tokenizer.name,
-            pat_str=tokenizer._pat_str,
-            mergeable_ranks=tokenizer._mergeable_ranks,
-            special_tokens={**tokenizer._special_tokens, **special_tokens},
-        )
+        
+        self.tokenizer = tokenizer
 
         self.dataset = load_dataset(self.DATASET_NAME, subset, split="train")
 
@@ -222,15 +220,17 @@ class SmolTalk(Dataset):
                 message=message["content"],
             )
 
+            text += "\n"
+
         tokens = self.tokenizer.encode_ordinary(text)
 
         tokens = tokens[: self.max_tokens_per_sample + 1]
 
-        sample = deepcopy(tokens)
-        labels = deepcopy(tokens)
+        sample = tokens[:-1]
+        labels = tokens[1:]
 
-        x = torch.tensor(sample[:-1], dtype=torch.int64)
-        y = torch.tensor(labels[1:], dtype=torch.int64)
+        x = torch.tensor(sample, dtype=torch.int64)
+        y = torch.tensor(labels, dtype=torch.int64)
 
         assert x.shape == y.shape, "Sample / label shape mismatch."
 

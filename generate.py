@@ -12,6 +12,8 @@ from data import SmolTalk
 
 import tiktoken
 
+from tiktoken import Encoding
+
 
 def main():
     parser = ArgumentParser(
@@ -56,6 +58,18 @@ def main():
     print("Model checkpoint loaded")
 
     if args.lora_path:
+        special_tokens = {
+            "<|im_start|>": tokenizer.n_vocab,
+            "<|im_end|>": tokenizer.n_vocab + 1,
+        }
+
+        tokenizer = Encoding(
+            name=tokenizer.name,
+            pat_str=tokenizer._pat_str,
+            mergeable_ranks=tokenizer._mergeable_ranks,
+            special_tokens={**tokenizer._special_tokens, **special_tokens},
+        )
+
         checkpoint = torch.load(
             args.lora_path, map_location=args.device, weights_only=True
         )
@@ -78,7 +92,10 @@ def main():
         prompt = input("Enter a prompt: ")
 
         if args.lora_path:
-            prompt = SmolTalk.PROMPT_TEMPLATE.format(role="user", message=prompt)
+            prompt = SmolTalk.REWRITE_SYSTEM_MESSAGE
+            prompt += "\n"
+            prompt += SmolTalk.PROMPT_TEMPLATE.format(role="user", message=prompt)
+            prompt += "\n"
 
         prompt = tokenizer.encode_ordinary(prompt)
 
