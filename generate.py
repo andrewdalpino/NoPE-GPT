@@ -58,17 +58,18 @@ def main():
     print("Model checkpoint loaded")
 
     if args.lora_path:
-        special_tokens = {
-            "<|im_start|>": tokenizer.n_vocab,
-            "<|im_end|>": tokenizer.n_vocab + 1,
-        }
-
         tokenizer = Encoding(
             name=tokenizer.name,
             pat_str=tokenizer._pat_str,
             mergeable_ranks=tokenizer._mergeable_ranks,
-            special_tokens={**tokenizer._special_tokens, **special_tokens},
+            special_tokens={
+                **tokenizer._special_tokens,
+                "<|im_start|>": tokenizer.n_vocab,
+                "<|im_end|>": tokenizer.n_vocab + 1,
+            },
         )
+
+        eos_indices = {tokenizer.eot_token, tokenizer.n_vocab + 1}
 
         checkpoint = torch.load(
             args.lora_path, map_location=args.device, weights_only=True
@@ -108,6 +109,7 @@ def main():
             args.temperature,
             args.top_k,
             args.top_p,
+            eos_indices,
         ):
             out = tokenizer.decode_single_token_bytes(token).decode(
                 "utf-8", errors="replace"

@@ -176,7 +176,7 @@ class SmolTalk(Dataset):
             raise ValueError(
                 f"Max tokens per sample must be greater than 0, {max_tokens_per_sample} given."
             )
-        
+
         self.tokenizer = tokenizer
 
         self.dataset = load_dataset(self.DATASET_NAME, subset, split="train")
@@ -226,8 +226,8 @@ class SmolTalk(Dataset):
 
         tokens = tokens[: self.max_tokens_per_sample + 1]
 
-        sample = tokens[:-1]
-        labels = tokens[1:]
+        sample = deepcopy(tokens[:-1])
+        labels = deepcopy(tokens[1:])
 
         x = torch.tensor(sample, dtype=torch.int64)
         y = torch.tensor(labels, dtype=torch.int64)

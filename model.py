@@ -39,7 +39,6 @@ class LightGPT(Module, PyTorchModelHubMixin):
         feed_forward_ratio: int,
         dropout: float,
         padding_index: int,
-        eos_index: int,
     ):
         super().__init__()
 
@@ -60,7 +59,7 @@ class LightGPT(Module, PyTorchModelHubMixin):
 
         output_layer = Linear(embedding_dimensions, vocabulary_size, bias=False)
 
-        token_embeddings.weight = output_layer.weight  # Tie weights
+        output_layer.weight = token_embeddings.weight  # Tie weights
 
         self.token_embeddings = token_embeddings
 
@@ -84,7 +83,6 @@ class LightGPT(Module, PyTorchModelHubMixin):
         self.loss_function = CrossEntropyLoss(ignore_index=padding_index)
 
         self.vocabulary_size = vocabulary_size
-        self.eos_index = eos_index
 
     @cached_property
     def num_trainable_params(self) -> int:
@@ -93,6 +91,25 @@ class LightGPT(Module, PyTorchModelHubMixin):
     def enable_activation_checkpointing(self) -> None:
         """Instead of memorizing the activations of the forward pass, recompute them at various checkpoints."""
         self.checkpoint = partial(torch_checkpoint, use_reentrant=False)
+
+    def resize_token_embeddings(self, num_tokens: int) -> None:
+        """Resize the token embeddings to accommodate a new vocabulary size."""
+
+        new_embeddings = Embedding(num_tokens, self.token_embeddings.embedding_dim).to(
+            self.token_embeddings.weight.device
+        )
+
+        num_tokens_to_copy = min(num_tokens, self.token_embeddings.num_embeddings)
+
+        new_embeddings.weight[:num_tokens_to_copy, :] = self.token_embeddings.weight[
+            :num_tokens_to_copy, :
+        ]
+
+        self.token_embeddings = new_embeddings
+
+        self.output_layer.weight = self.token_embeddings.weight
+
+        self.vocabulary_size = num_tokens
 
     def forward(
         self, x: Tensor, y: Tensor | None = None
@@ -153,6 +170,7 @@ class LightGPT(Module, PyTorchModelHubMixin):
         temperature: float = 1.0,
         top_k: int = 500,
         top_p: float = 0.9,
+        eos_indices: set = None,
     ) -> Iterator:
         """
         Given a prompt, sample the next {max_tokens} tokens from the model weighted
@@ -205,7 +223,7 @@ class LightGPT(Module, PyTorchModelHubMixin):
 
             next_token = indices[offset]
 
-            if next_token == self.eos_index:
+            if next_token in eos_indices:
                 break
 
             yield next_token
@@ -220,6 +238,8 @@ class LightGPT(Module, PyTorchModelHubMixin):
         context_length: int = 1024,
         num_candidates: int = 3,
         beam_width: int = 16,
+        length_penalty: float = 1.0,
+        eos_indices: set = None,
     ) -> list:
         """
         Given a prompt, return the {num_candidates} highest probability sequences. Note that
@@ -238,13 +258,20 @@ class LightGPT(Module, PyTorchModelHubMixin):
         if beam_width <= 0:
             raise ValueError(f"Beam width must be greater than 0, {beam_width} given.")
 
+        if length_penalty <= 0:
+            raise ValueError(
+                f"Length penalty must be greater than 0, {length_penalty} given."
+            )
+
         @dataclass
         class Candidate:
-            log_probability: float
+            cumulative_log_probability: float
             tokens: Tensor
 
             def priority(self) -> float:
-                return self.log_probability
+                return (
+                    self.cumulative_log_probability / len(self.tokens) ** length_penalty
+                )
 
         sort_candidates = partial(
             sorted,
@@ -272,7 +299,7 @@ class LightGPT(Module, PyTorchModelHubMixin):
                 if candidate.log_probability < worst_candidate.log_probability:
                     break
 
-            if len(candidate.tokens) > 0 and candidate.tokens[-1] == self.eos_index:
+            if len(candidate.tokens) > 0 and candidate.tokens[-1] in eos_indices:
                 candidate.tokens = candidate.tokens[:-1]
 
                 completed.append(candidate)
@@ -295,11 +322,13 @@ class LightGPT(Module, PyTorchModelHubMixin):
             log_probabilities = log_softmax(logits, dim=0)
 
             for log_probability, index in zip(log_probabilities, indices):
-                log_probability = candidate.log_probability + log_probability
+                cumulative_log_probability = (
+                    candidate.cumulative_log_probability + log_probability
+                )
 
                 tokens = torch.cat((candidate.tokens, index.unsqueeze(0)))
 
-                candidates.append(Candidate(log_probability, tokens))
+                candidates.append(Candidate(cumulative_log_probability, tokens))
 
             candidates = sort_candidates(candidates)
 
@@ -323,19 +352,7 @@ class LightGPTInstruct(Module, PyTorchModelHubMixin):
         if alpha <= 0.0:
             raise ValueError(f"Alpha must be greater than 0, {alpha} given.")
 
-        for param in model.parameters():
-            param.requires_grad = False
-
-        model.output_layer.weight = Parameter(
-            torch.cat(
-                (
-                    model.output_layer.weight,
-                    torch.randn(2, model.output_layer.weight.size(dim=1)),
-                )
-            )
-        )
-
-        model.token_embeddings.weight = model.output_layer.weight
+        self.freeze_parameters()
 
         for module in model.body:
             out_features, in_features = module.attention.in_proj_weight.shape
@@ -362,6 +379,12 @@ class LightGPTInstruct(Module, PyTorchModelHubMixin):
                         LoRA.from_linear(layer, rank, alpha, dropout),
                     )
 
+        register_parametrization(
+            self.output_layer,
+            "weight",
+            LoRA.from_linear(layer, rank, alpha, dropout),
+        )
+
         self.model = model
 
     @property
@@ -374,6 +397,10 @@ class LightGPTInstruct(Module, PyTorchModelHubMixin):
             for name, module in super().state_dict().items()
             if "lora" in name
         }
+
+    def freeze_parameters(self):
+        for param in self.model.parameters():
+            param.requires_grad = False
 
     def merge_lora_parameters(self):
         """Merge the LoRA parameters with the original parameters."""
@@ -401,9 +428,10 @@ class LightGPTInstruct(Module, PyTorchModelHubMixin):
         temperature: float = 1.0,
         top_k: int = 500,
         top_p: float = 0.9,
+        eos_indices: set = None,
     ) -> Iterator:
         return self.model.generate(
-            prompt, max_tokens, context_length, temperature, top_k, top_p
+            prompt, max_tokens, context_length, temperature, top_k, top_p, eos_indices
         )
 
     def beam_search(
@@ -413,9 +441,17 @@ class LightGPTInstruct(Module, PyTorchModelHubMixin):
         context_length: int = 1024,
         num_candidates: int = 3,
         beam_width: int = 16,
+        length_penalty: float = 1.0,
+        eos_indices: set = None,
     ) -> list:
         return self.model.beam_search(
-            prompt, max_tokens, context_length, num_candidates, beam_width
+            prompt,
+            max_tokens,
+            context_length,
+            num_candidates,
+            beam_width,
+            length_penalty,
+            eos_indices,
         )
 
 

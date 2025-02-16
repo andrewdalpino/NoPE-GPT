@@ -191,7 +191,6 @@ def main():
         "feed_forward_ratio": args.feed_forward_ratio,
         "dropout": args.dropout,
         "padding_index": training.PADDING_INDEX,
-        "eos_index": tokenizer.eot_token,
     }
 
     model = LightGPT(**model_args)

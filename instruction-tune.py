@@ -91,16 +91,15 @@ def main():
 
     tokenizer = tiktoken.get_encoding(checkpoint["token_encoding"])
 
-    special_tokens = {
-        "<|im_start|>": tokenizer.n_vocab,
-        "<|im_end|>": tokenizer.n_vocab + 1,
-    }
-
     tokenizer = Encoding(
         name=tokenizer.name,
         pat_str=tokenizer._pat_str,
         mergeable_ranks=tokenizer._mergeable_ranks,
-        special_tokens={**tokenizer._special_tokens, **special_tokens},
+        special_tokens={
+            **tokenizer._special_tokens,
+            "<|im_start|>": tokenizer.n_vocab,
+            "<|im_end|>": tokenizer.n_vocab + 1,
+        },
     )
 
     dataset = SmolTalk(
@@ -129,6 +128,8 @@ def main():
     )
 
     model = LightGPT(**model_args)
+
+    model.resize_token_embeddings(tokenizer.n_vocab)
 
     if args.activation_checkpointing:
         model.enable_activation_checkpointing()
