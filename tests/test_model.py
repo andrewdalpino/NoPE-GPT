@@ -22,7 +22,6 @@ class TestLightGPT(unittest.TestCase):
             feed_forward_ratio=4,
             dropout=0.1,
             padding_index=0,
-            eos_index=1,
         )
 
     def test_forward(self):
@@ -66,7 +65,6 @@ class TestLightGPTInstruct(unittest.TestCase):
             feed_forward_ratio=4,
             dropout=0.1,
             padding_index=0,
-            eos_index=1,
         )
 
         self.model = LightGPTInstruct(base_model, rank=4, alpha=1.0, dropout=0.1)
@@ -98,7 +96,6 @@ class TestONNXModel(unittest.TestCase):
             feed_forward_ratio=4,
             dropout=0.1,
             padding_index=0,
-            eos_index=1,
         )
 
         self.model = ONNXModel(base_model)

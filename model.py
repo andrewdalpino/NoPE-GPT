@@ -355,7 +355,8 @@ class LightGPTInstruct(Module, PyTorchModelHubMixin):
         if alpha <= 0.0:
             raise ValueError(f"Alpha must be greater than 0, {alpha} given.")
 
-        self.freeze_parameters()
+        for param in model.parameters():
+            param.requires_grad = False
 
         for module in model.body:
             out_features, in_features = module.attention.in_proj_weight.shape
@@ -383,9 +384,9 @@ class LightGPTInstruct(Module, PyTorchModelHubMixin):
                     )
 
         register_parametrization(
-            self.output_layer,
+            model.output_layer,
             "weight",
-            LoRA.from_linear(layer, rank, alpha, dropout),
+            LoRA.from_linear(model.output_layer, rank, alpha, dropout),
         )
 
         self.model = model
@@ -400,10 +401,6 @@ class LightGPTInstruct(Module, PyTorchModelHubMixin):
             for name, module in super().state_dict().items()
             if "lora" in name
         }
-
-    def freeze_parameters(self):
-        for param in self.model.parameters():
-            param.requires_grad = False
 
     def merge_lora_parameters(self):
         """Merge the LoRA parameters with the original parameters."""
