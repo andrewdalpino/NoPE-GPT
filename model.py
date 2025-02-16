@@ -170,7 +170,7 @@ class LightGPT(Module, PyTorchModelHubMixin):
         temperature: float = 1.0,
         top_k: int = 500,
         top_p: float = 0.9,
-        eos_indices: set = None,
+        eos_indices: set = set(),
     ) -> Iterator:
         """
         Given a prompt, sample the next {max_tokens} tokens from the model weighted
@@ -239,7 +239,7 @@ class LightGPT(Module, PyTorchModelHubMixin):
         num_candidates: int = 3,
         beam_width: int = 16,
         length_penalty: float = 1.0,
-        eos_indices: set = None,
+        eos_indices: set = set(),
     ) -> list:
         """
         Given a prompt, return the {num_candidates} highest probability sequences. Note that
@@ -296,7 +296,10 @@ class LightGPT(Module, PyTorchModelHubMixin):
 
                 worst_candidate = completed[-1]
 
-                if candidate.log_probability < worst_candidate.log_probability:
+                if (
+                    candidate.cumulative_log_probability
+                    < worst_candidate.cumulative_log_probability
+                ):
                     break
 
             if len(candidate.tokens) > 0 and candidate.tokens[-1] in eos_indices:
@@ -428,7 +431,7 @@ class LightGPTInstruct(Module, PyTorchModelHubMixin):
         temperature: float = 1.0,
         top_k: int = 500,
         top_p: float = 0.9,
-        eos_indices: set = None,
+        eos_indices: set = set(),
     ) -> Iterator:
         return self.model.generate(
             prompt, max_tokens, context_length, temperature, top_k, top_p, eos_indices
@@ -442,7 +445,7 @@ class LightGPTInstruct(Module, PyTorchModelHubMixin):
         num_candidates: int = 3,
         beam_width: int = 16,
         length_penalty: float = 1.0,
-        eos_indices: set = None,
+        eos_indices: set = set(),
     ) -> list:
         return self.model.beam_search(
             prompt,
