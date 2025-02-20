@@ -65,7 +65,6 @@ class Fineweb(IterableDataset):
                 streaming=True,
             ).map(
                 self.tokenize,
-                remove_columns=["text", "token_count"],
             )
 
             test = tokenized_dataset.take(4 * samples_per_epoch)
@@ -86,18 +85,22 @@ class Fineweb(IterableDataset):
                 total_length = 0
 
                 for row in tqdm(dataset, desc=f"Writing {split} dataset"):
-                    length = row["length"]
+                    tokens = row["tokens"]
+
+                    length = len(tokens)
 
                     l_hat = total_length + length
 
-                    if l_hat > len(bin_out):
-                        new_bin_out = new_memmap(shape=len(bin_out) + length)
+                    delta = l_hat - len(bin_out)
+
+                    if delta > 0:
+                        new_bin_out = new_memmap(shape=len(bin_out) + delta)
 
                         new_bin_out[: len(bin_out)] = bin_out
 
                         bin_out = new_bin_out
 
-                    bin_out[total_length:l_hat] = row["tokens"]
+                    bin_out[total_length:l_hat] = tokens
 
                     total_length = l_hat
 
@@ -117,7 +120,6 @@ class Fineweb(IterableDataset):
 
         return {
             "tokens": tokens,
-            "length": len(tokens),
         }
 
     def __iter__(self):
