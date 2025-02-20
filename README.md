@@ -192,3 +192,4 @@ python beam_search.py --beam_width=16 --num_candidates=3
 >- B. Zhang, et al. Root Mean Square Layer Normalization. 33rd Conference on Neural Information Processing Systems, NeurIPS 2019.
 >- J. Kaplan, et al. Scaling Laws for Neural Language Models, OpenAI, 2020.
 >- J. Hoffman, et al. Training Compute-Optimal Large Language Models, Deep Mind, 2022.
+>- R. Sutton. The Bitter Lesson, https://www.incompleteideas.net/IncIdeas/BitterLesson.html, 2019.

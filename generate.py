@@ -96,9 +96,8 @@ def main():
 
         if args.lora_path:
             prompt = SmolTalk.REWRITE_SYSTEM_MESSAGE
-            prompt += "\n"
+
             prompt += SmolTalk.PROMPT_TEMPLATE.format(role="user", message=prompt)
-            prompt += "\n"
 
         prompt = tokenizer.encode_ordinary(prompt)
 

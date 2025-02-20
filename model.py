@@ -165,7 +165,7 @@ class LightGPT(Module, PyTorchModelHubMixin):
     def generate(
         self,
         prompt: Tensor,
-        max_tokens: int = 2000,
+        max_tokens: int = 1000,
         context_length: int = 1024,
         temperature: float = 1.0,
         top_k: int = 500,
@@ -423,7 +423,7 @@ class LightGPTInstruct(Module, PyTorchModelHubMixin):
     def generate(
         self,
         prompt: Tensor,
-        max_tokens: int = 2000,
+        max_tokens: int = 1000,
         context_length: int = 1024,
         temperature: float = 1.0,
         top_k: int = 500,

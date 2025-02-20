@@ -9,6 +9,8 @@ from tiktoken import Encoding
 
 import numpy as np
 
+from numpy.lib.format import open_memmap
+
 import torch
 
 from torch import Tensor
@@ -62,48 +64,47 @@ class Fineweb(IterableDataset):
         if not path.exists(bin_file_path):
             print("Preprocessing dataset ...")
 
-            tokenized_splits = (
-                load_dataset(
-                    self.DATASET_NAME,
-                    name=subset,
-                    num_proc=num_processes,
-                    split="train",
-                )
-                .map(
-                    self.tokenize,
-                    desc="Tokenizing",
-                    remove_columns=["text", "token_count"],
-                    num_proc=num_processes,
-                )
-                .train_test_split(
-                    test_size=int(2 * samples_per_epoch),
-                    shuffle=True,
-                )
+            tokenized_dataset = load_dataset(
+                self.DATASET_NAME,
+                name=subset,
+                split="train",
+                streaming=True,
+            ).map(
+                self.tokenize,
+                remove_columns=["text", "token_count"],
             )
+
+            test = tokenized_dataset.take(2 * samples_per_epoch)
+            train = tokenized_dataset.skip(2 * samples_per_epoch)
+
+            tokenized_splits = {
+                "train": train,
+                "test": test,
+            }
 
             for split, dataset in tokenized_splits.items():
                 bin_path = train_path if split == "train" else test_path
 
-                total_length = np.sum(dataset["length"], dtype=np.uint64)
+                total_length = 0
 
-                bin_out = np.memmap(
-                    bin_path, dtype=np.uint16, mode="w+", shape=total_length
-                )
+                bin_out = open_memmap(
+                    bin_path, dtype=np.uint16, mode="w+", shape=(1000000000000,)
+                )  # Overprovision the storage needed for the tokenized dataset.
 
-                index = 0
+                for row in tqdm(dataset, desc=f"Writing {split} dataset"):
+                    length = row["length"]
 
-                for i in tqdm(range(self.NUM_SHARDS), desc="Saving"):
-                    batch = dataset.shard(
-                        num_shards=self.NUM_SHARDS, index=i, contiguous=True
-                    ).with_format("numpy")
+                    bin_out[total_length : total_length + length] = row["tokens"]
 
-                    token_batch = np.concatenate(batch["tokens"])
+                    total_length += length
 
-                    n = len(token_batch)
+                bin_out.flush()
 
-                    bin_out[index : index + n] = token_batch
+                bin_out = open_memmap(
+                    bin_path, dtype=np.uint16, mode="w+", shape=(total_length,)
+                )  # Resize the dataset file to the actual size.
 
-                    index += n
+                bin_out.shape = (total_length,)
 
                 bin_out.flush()
 
@@ -145,7 +146,7 @@ class SmolTalk(Dataset):
 
     PADDING_INDEX = -100
 
-    PROMPT_TEMPLATE = "<|im_start|>{role}\n{message}\n<|im_end|>"
+    PROMPT_TEMPLATE = "<|im_start|>{role}\n{message}\n<|im_end|>\n"
 
     REWRITE_SYSTEM_MESSAGE = PROMPT_TEMPLATE.format(
         role="system",
@@ -219,8 +220,6 @@ class SmolTalk(Dataset):
                 role=message["role"],
                 message=message["content"],
             )
-
-            text += "\n"
 
         tokens = self.tokenizer.encode_ordinary(text)
 
