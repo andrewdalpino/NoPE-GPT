@@ -2,14 +2,13 @@ import random
 
 from os import path
 from copy import deepcopy
+from functools import partial
 
 from datasets import load_dataset
 
 from tiktoken import Encoding
 
 import numpy as np
-
-from numpy.lib.format import open_memmap
 
 import torch
 
@@ -23,8 +22,6 @@ from tqdm import tqdm
 class Fineweb(IterableDataset):
     DATASET_NAME = "HuggingFaceFW/fineweb"
 
-    NUM_SHARDS = 1024
-
     PADDING_INDEX = -100
 
     def __init__(
@@ -35,7 +32,6 @@ class Fineweb(IterableDataset):
         split: str = "train",
         tokens_per_sample: int = 1024,
         samples_per_epoch: int = 4096,
-        num_processes: int = 8,
     ):
         super().__init__()
 
@@ -52,6 +48,8 @@ class Fineweb(IterableDataset):
         if samples_per_epoch < 1:
             raise ValueError(f"Samples per epoch must be greater than 0.")
 
+        self.tokenizer = tokenizer
+
         dataset_name = f"fineweb-{subset}" if subset != None else "fineweb"
 
         train_path = path.join(root_path, f"{dataset_name}-train-{tokenizer.name}.bin")
@@ -59,11 +57,7 @@ class Fineweb(IterableDataset):
 
         bin_file_path = train_path if split == "train" else test_path
 
-        self.tokenizer = tokenizer
-
         if not path.exists(bin_file_path):
-            print("Preprocessing dataset ...")
-
             tokenized_dataset = load_dataset(
                 self.DATASET_NAME,
                 name=subset,
@@ -74,37 +68,38 @@ class Fineweb(IterableDataset):
                 remove_columns=["text", "token_count"],
             )
 
-            test = tokenized_dataset.take(2 * samples_per_epoch)
-            train = tokenized_dataset.skip(2 * samples_per_epoch)
+            test = tokenized_dataset.take(4 * samples_per_epoch)
+            train = tokenized_dataset.skip(4 * samples_per_epoch)
 
             tokenized_splits = {
-                "train": train,
                 "test": test,
+                "train": train,
             }
 
             for split, dataset in tokenized_splits.items():
                 bin_path = train_path if split == "train" else test_path
 
-                total_length = 0
+                bin_out = np.memmap(bin_path, dtype=np.uint16, mode="w+", shape=1024)
 
-                bin_out = open_memmap(
-                    bin_path, dtype=np.uint16, mode="w+", shape=(1000000000000,)
-                )  # Overprovision the storage needed for the tokenized dataset.
+                new_memmap = partial(np.memmap, bin_path, dtype=np.uint16, mode="r+")
+
+                total_length = 0
 
                 for row in tqdm(dataset, desc=f"Writing {split} dataset"):
                     length = row["length"]
 
-                    bin_out[total_length : total_length + length] = row["tokens"]
+                    l_hat = total_length + length
 
-                    total_length += length
+                    if l_hat > len(bin_out):
+                        new_bin_out = new_memmap(shape=len(bin_out) + length)
 
-                bin_out.flush()
+                        new_bin_out[: len(bin_out)] = bin_out
 
-                bin_out = open_memmap(
-                    bin_path, dtype=np.uint16, mode="w+", shape=(total_length,)
-                )  # Resize the dataset file to the actual size.
+                        bin_out = new_bin_out
 
-                bin_out.shape = (total_length,)
+                    bin_out[total_length:l_hat] = row["tokens"]
+
+                    total_length = l_hat
 
                 bin_out.flush()
 

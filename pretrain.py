@@ -170,7 +170,6 @@ def main():
         tokenizer=tokenizer,
         tokens_per_sample=args.tokens_per_sample,
         samples_per_epoch=args.samples_per_epoch,
-        num_processes=args.num_dataset_processes,
     )
 
     training = build_fineweb(split="train")
