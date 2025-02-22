@@ -1,6 +1,6 @@
 import random
 
-from os import path
+from os import path, remove as delete_file
 from copy import deepcopy
 from functools import partial
 
@@ -52,12 +52,9 @@ class Fineweb(IterableDataset):
 
         dataset_name = f"fineweb-{subset}" if subset != None else "fineweb"
 
-        train_path = path.join(root_path, f"{dataset_name}-train-{tokenizer.name}.bin")
-        test_path = path.join(root_path, f"{dataset_name}-test-{tokenizer.name}.bin")
+        bin_path = path.join(root_path, f"{dataset_name}-{tokenizer.name}.bin")
 
-        bin_file_path = train_path if split == "train" else test_path
-
-        if not path.exists(bin_file_path):
+        if not path.exists(bin_path):
             tokenized_dataset = load_dataset(
                 self.DATASET_NAME,
                 name=subset,
@@ -67,51 +64,58 @@ class Fineweb(IterableDataset):
                 self.tokenize,
             )
 
-            test = tokenized_dataset.take(4 * samples_per_epoch)
-            train = tokenized_dataset.skip(4 * samples_per_epoch)
+            temp_path = bin_path + ".temp"
 
-            tokenized_splits = {
-                "test": test,
-                "train": train,
-            }
+            temp_out = np.memmap(temp_path, dtype=np.uint16, mode="w+", shape=1024)
 
-            for split, dataset in tokenized_splits.items():
-                bin_path = train_path if split == "train" else test_path
+            new_memmap = partial(np.memmap, temp_path, dtype=np.uint16, mode="r+")
 
-                bin_out = np.memmap(bin_path, dtype=np.uint16, mode="w+", shape=1024)
+            total_length = 0
 
-                new_memmap = partial(np.memmap, bin_path, dtype=np.uint16, mode="r+")
+            for row in tqdm(tokenized_dataset, desc=f"Preprocessing dataset"):
+                tokens = row["tokens"]
 
-                total_length = 0
+                length = len(tokens)
 
-                for row in tqdm(dataset, desc=f"Writing {split} dataset"):
-                    tokens = row["tokens"]
+                l_hat = total_length + length
 
-                    length = len(tokens)
+                while l_hat > len(temp_out):
+                    new_temp_out = new_memmap(shape=2 * len(temp_out))
 
-                    l_hat = total_length + length
+                    new_temp_out[: len(temp_out)] = temp_out
 
-                    delta = l_hat - len(bin_out)
+                    temp_out = new_temp_out
 
-                    if delta > 0:
-                        new_bin_out = new_memmap(shape=len(bin_out) + delta)
+                temp_out[total_length:l_hat] = tokens
 
-                        new_bin_out[: len(bin_out)] = bin_out
+                total_length = l_hat
 
-                        bin_out = new_bin_out
+            bin_out = np.memmap(
+                bin_path, dtype=np.uint16, mode="w+", shape=total_length
+            )
 
-                    bin_out[total_length:l_hat] = tokens
+            bin_out[:] = temp_out[:total_length]
 
-                    total_length = l_hat
+            bin_out.flush()
 
-                bin_out.flush()
+            delete_file(temp_path)
 
-        memmap = np.memmap(bin_file_path, dtype=np.uint16, mode="r")
+        memmap = np.memmap(bin_path, dtype=np.uint16, mode="r")
+
+        tokens_per_epoch = samples_per_epoch * (tokens_per_sample + 1)
+
+        start = tokens_per_epoch if split == "train" else 0
+        end = len(memmap) if split == "train" else tokens_per_epoch
+
+        max_offset = end - tokens_per_epoch
 
         self.memmap = memmap
-        self.max_start = len(memmap) - (tokens_per_sample + 1)
+        self.split = split
         self.tokens_per_sample = tokens_per_sample
         self.samples_per_epoch = samples_per_epoch
+        self.start = start
+        self.end = end
+        self.max_offset = max_offset
 
     def tokenize(self, sample: dict) -> dict:
         tokens = self.tokenizer.encode_ordinary(sample["text"])
@@ -123,8 +127,9 @@ class Fineweb(IterableDataset):
         }
 
     def __iter__(self):
+        start = random.randint(self.start, self.max_offset)
+
         for _ in range(self.samples_per_epoch):
-            start = random.randint(0, self.max_start)
             end = start + self.tokens_per_sample
 
             x = self.memmap[start:end]
@@ -137,6 +142,8 @@ class Fineweb(IterableDataset):
 
             yield x, y
 
+            start += self.tokens_per_sample
+
 
 class SmolTalk(Dataset):
     DATASET_NAME = "HuggingFaceTB/smoltalk"
@@ -144,14 +151,6 @@ class SmolTalk(Dataset):
     PADDING_INDEX = -100
 
     PROMPT_TEMPLATE = "<|im_start|>{role}\n{message}\n<|im_end|>\n"
-
-    REWRITE_SYSTEM_MESSAGE = PROMPT_TEMPLATE.format(
-        role="system",
-        message=(
-            "You're an AI assistant for text re-writing. "
-            "Rewrite the input text to make it more concise while preserving its core meaning."
-        ),
-    )
 
     def __init__(
         self,
