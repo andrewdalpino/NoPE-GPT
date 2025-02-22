@@ -163,7 +163,7 @@ def main():
 
     tokenizer = tiktoken.get_encoding(args.token_encoding)
 
-    build_fineweb = partial(
+    new_dataset = partial(
         Fineweb,
         root_path=args.dataset_path,
         subset=args.dataset_subset,
@@ -172,8 +172,8 @@ def main():
         samples_per_epoch=args.samples_per_epoch,
     )
 
-    training = build_fineweb(split="train")
-    testing = build_fineweb(split="test")
+    training = new_dataset(split="train")
+    testing = new_dataset(split="test")
 
     train_loader = DataLoader(
         training, batch_size=args.batch_size, pin_memory="cpu" not in args.device

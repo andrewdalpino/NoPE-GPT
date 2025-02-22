@@ -48,11 +48,11 @@ class Fineweb(IterableDataset):
         if samples_per_epoch < 1:
             raise ValueError(f"Samples per epoch must be greater than 0.")
 
-        self.tokenizer = tokenizer
-
         dataset_name = f"fineweb-{subset}" if subset != None else "fineweb"
 
         bin_path = path.join(root_path, f"{dataset_name}-{tokenizer.name}.bin")
+
+        self.tokenizer = tokenizer
 
         if not path.exists(bin_path):
             tokenized_dataset = load_dataset(
