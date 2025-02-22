@@ -114,7 +114,6 @@ class Fineweb(IterableDataset):
         self.tokens_per_sample = tokens_per_sample
         self.samples_per_epoch = samples_per_epoch
         self.start = start
-        self.end = end
         self.max_offset = max_offset
 
     def tokenize(self, sample: dict) -> dict:
