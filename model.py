@@ -223,7 +223,7 @@ class LightGPT(Module, PyTorchModelHubMixin):
 
             next_token = indices[offset]
 
-            if next_token in eos_indices:
+            if next_token.item() in eos_indices:
                 break
 
             yield next_token
@@ -302,12 +302,15 @@ class LightGPT(Module, PyTorchModelHubMixin):
                 ):
                     break
 
-            if len(candidate.tokens) > 0 and candidate.tokens[-1] in eos_indices:
-                candidate.tokens = candidate.tokens[:-1]
+            if len(candidate.tokens) > 0:
+                last_token = candidate.tokens[-1]
 
-                completed.append(candidate)
+                if last_token.item() in eos_indices:
+                    candidate.tokens = candidate.tokens[:-1]
 
-                continue
+                    completed.append(candidate)
+
+                    continue
 
             if len(candidate.tokens) >= max_tokens:
                 completed.append(candidate)
