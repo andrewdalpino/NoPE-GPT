@@ -102,8 +102,6 @@ def main():
         },
     )
 
-    model_args["vocab_size"] = tokenizer.n_vocab
-
     dataset = SmolTalk(
         tokenizer,
         subset=args.dataset_subset,
@@ -141,6 +139,7 @@ def main():
     print("Model checkpoint loaded")
 
     lora_args = {
+        "vocabulary_size": tokenizer.n_vocab,
         "rank": args.rank,
         "alpha": args.alpha,
         "dropout": args.dropout,

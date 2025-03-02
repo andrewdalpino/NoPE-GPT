@@ -92,6 +92,7 @@ class LightGPT(Module):
         """Instead of memorizing the activations of the forward pass, recompute them at various checkpoints."""
         self.checkpoint = partial(torch_checkpoint, use_reentrant=False)
 
+    @torch.no_grad()
     def resize_token_embeddings(self, num_tokens: int) -> None:
         """Resize the token embeddings to accommodate a new vocabulary size."""
 
