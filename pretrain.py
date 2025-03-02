@@ -58,7 +58,7 @@ def main():
     parser.add_argument("--gradient_accumulation_steps", default=128, type=int)
     parser.add_argument("--tokens_per_sample", default=1024, type=int)
     parser.add_argument("--samples_per_epoch", default=4096, type=int)
-    parser.add_argument("--num_epochs", default=1686, type=int)
+    parser.add_argument("--num_epochs", default=2680, type=int)
     parser.add_argument("--learning_rate", default=1e-2, type=float)
     parser.add_argument("--rms_decay", default=-0.8, type=float)
     parser.add_argument("--low_memory_optimizer", action="store_true")
