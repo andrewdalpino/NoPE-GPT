@@ -102,6 +102,8 @@ def main():
         },
     )
 
+    model_args["vocab_size"] = tokenizer.n_vocab
+
     dataset = SmolTalk(
         tokenizer,
         subset=args.dataset_subset,
@@ -128,8 +130,6 @@ def main():
     )
 
     model = LightGPT(**model_args)
-
-    model.resize_token_embeddings(tokenizer.n_vocab)
 
     if args.activation_checkpointing:
         model.enable_activation_checkpointing()

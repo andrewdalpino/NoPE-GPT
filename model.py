@@ -24,11 +24,11 @@ from torch.nn.functional import softmax, log_softmax
 from torch.nn.utils.parametrize import register_parametrization, remove_parametrizations
 from torch.utils.checkpoint import checkpoint as torch_checkpoint
 
-from huggingface_hub import PyTorchModelHubMixin
+from transformers import PretrainedConfig, PreTrainedModel
 
 
-class LightGPT(Module, PyTorchModelHubMixin):
-    """A generative pretrained transformer."""
+class LightGPT(Module):
+    """A generative pretrained transformer with no positional embeddings."""
 
     def __init__(
         self,
@@ -42,16 +42,16 @@ class LightGPT(Module, PyTorchModelHubMixin):
     ):
         super().__init__()
 
+        if vocabulary_size <= 0:
+            raise ValueError(
+                f"Vocabulary size must be greater than 0, {vocabulary_size} given."
+            )
+
         if num_layers <= 0:
             raise ValueError(f"Num layers must be greater than 0, {num_layers} given.")
 
         if feed_forward_ratio not in {1, 2, 4}:
             raise ValueError("Feed-forward ratio must be either 1, 2, or 4.")
-
-        if vocabulary_size <= 0:
-            raise ValueError(
-                f"Vocabulary size must be greater than 0, {vocabulary_size} given."
-            )
 
         token_embeddings = Embedding(
             vocabulary_size, embedding_dimensions, padding_idx=padding_index
@@ -343,14 +343,26 @@ class LightGPT(Module, PyTorchModelHubMixin):
         return completed
 
 
-class LightGPTInstruct(Module, PyTorchModelHubMixin):
+class LightGPTInstruct(Module):
     """
     A wrapper for pretrained GPT models that applies a LoRA reparameterization
     to the intermediate layers of the network.
     """
 
-    def __init__(self, model: LightGPT, rank: int, alpha: float, dropout: float):
+    def __init__(
+        self,
+        model: LightGPT,
+        vocabulary_size: int,
+        rank: int,
+        alpha: float,
+        dropout: float,
+    ):
         super().__init__()
+
+        if vocabulary_size <= 0:
+            raise ValueError(
+                f"Vocabulary size must be greater than 0, {vocabulary_size} given."
+            )
 
         if rank <= 0:
             raise ValueError(f"Rank must be greater than 0, {rank} given.")
@@ -358,8 +370,14 @@ class LightGPTInstruct(Module, PyTorchModelHubMixin):
         if alpha <= 0.0:
             raise ValueError(f"Alpha must be greater than 0, {alpha} given.")
 
+        if vocabulary_size != model.vocabulary_size:
+            model.resize_token_embeddings(vocabulary_size)
+
         for param in model.parameters():
             param.requires_grad = False
+
+        for i in range(vocabulary_size, model.vocabulary_size, -1):
+            model.output_layer.weight[i - 1].requires_grad = True
 
         for module in model.body:
             out_features, in_features = module.attention.in_proj_weight.shape
@@ -456,6 +474,62 @@ class LightGPTInstruct(Module, PyTorchModelHubMixin):
             length_penalty,
             eos_indices,
         )
+
+
+class LightGPTHuggingFaceConfig(PretrainedConfig):
+    """Provide a monolithic configuration object to compensate for HuggingFace Transformers' API."""
+
+    model_type = "lightgpt"
+
+    def __init__(
+        self,
+        vocabulary_size: int = 50257,
+        embedding_dimensions: int = 1024,
+        num_heads: int = 16,
+        num_layers: int = 24,
+        feed_forward_ratio: int = 4,
+        dropout: float = 0.1,
+        padding_index: int = -100,
+        **kwargs,
+    ):
+        self.vocabulary_size = vocabulary_size
+        self.embedding_dimensions = embedding_dimensions
+        self.num_heads = num_heads
+        self.num_layers = num_layers
+        self.feed_forward_ratio = feed_forward_ratio
+        self.dropout = dropout
+        self.padding_index = padding_index
+
+        super().__init__(**kwargs)
+
+
+class LightGPTHuggingFaceModel(PreTrainedModel):
+    """Compensate for HuggingFace Transformers' API using a model wrapper."""
+
+    config_class = LightGPTHuggingFaceConfig
+
+    def __init__(self, config: LightGPTHuggingFaceConfig):
+        super().__init__(config)
+
+        self.model = LightGPT(
+            config.vocabulary_size,
+            config.embedding_dimensions,
+            config.num_heads,
+            config.num_layers,
+            config.feed_forward_ratio,
+            config.dropout,
+            config.padding_index,
+        )
+
+    def forward(
+        self, x: Tensor, y: Tensor | None = None
+    ) -> tuple[Tensor, Tensor | None]:
+        logits, loss = self.model.forward(x, y)
+
+        return {
+            "logits": logits,
+            "loss": loss,
+        }
 
 
 class ONNXModel(Module):
