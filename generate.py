@@ -87,6 +87,9 @@ def main():
 
         print("LoRA checkpoint loaded")
 
+        print(model.model.token_embeddings.weight)
+        exit()
+
     model.to(args.device)
 
     model.eval()
@@ -95,9 +98,15 @@ def main():
         prompt = input("Enter a prompt: ")
 
         if args.lora_path:
-            prompt = SmolTalk.PROMPT_TEMPLATE.format(role="user", message=prompt)
+            instruction = SmolTalk.PROMPT_TEMPLATE.format(role="system", message="Provide a concise, objective summary of the input text in up to three sentences, focusing on key actions and intentions without using second or third person pronouns.")
 
-        prompt = tokenizer.encode_ordinary(prompt)
+            instruction += SmolTalk.PROMPT_TEMPLATE.format(role="user", message=prompt)
+
+            instruction += "<|im_start|>assistant\n"
+
+            prompt = instruction
+
+        prompt = tokenizer.encode(prompt, allowed_special="all")
 
         prompt = torch.tensor(prompt, dtype=torch.int64, device=args.device)
 

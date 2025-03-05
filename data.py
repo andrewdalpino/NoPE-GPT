@@ -216,7 +216,7 @@ class SmolTalk(Dataset):
                 message=message["content"],
             )
 
-        tokens = self.tokenizer.encode_ordinary(text)
+        tokens = self.tokenizer.encode(text, allowed_special="all")
 
         tokens = tokens[: self.max_tokens_per_sample + 1]
 

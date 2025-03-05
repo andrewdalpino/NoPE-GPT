@@ -292,8 +292,8 @@ def main():
             average_cross_entropy = total_cross_entropy / total_batches
             average_gradient_norm = total_gradient_norm / total_steps
 
-            logger.add_scalar("cross entropy", average_cross_entropy, epoch)
-            logger.add_scalar("gradient norm", average_gradient_norm, epoch)
+            logger.add_scalar("Cross Entropy", average_cross_entropy, epoch)
+            logger.add_scalar("Gradient Norm", average_gradient_norm, epoch)
 
             print(
                 f"Epoch {epoch}:",
@@ -315,7 +315,7 @@ def main():
 
             perplexity = perplexity_metric.compute()
 
-            logger.add_scalar("perplexity", perplexity, epoch)
+            logger.add_scalar("Perplexity", perplexity, epoch)
 
             print(f"Perplexity: {perplexity:.3f}")
 

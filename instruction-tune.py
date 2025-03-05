@@ -108,7 +108,7 @@ def main():
         max_tokens_per_sample=args.max_tokens_per_sample,
     )
 
-    training, testing = random_split(dataset, (0.95, 0.05))
+    training, testing, drop = random_split(dataset, (0.15, 0.02, 0.83))
 
     train_loader = DataLoader(
         training,
@@ -132,7 +132,7 @@ def main():
     if args.activation_checkpointing:
         model.enable_activation_checkpointing()
 
-    model = torch.compile(model)
+    model = torch.compile(model, dynamic=True)
 
     model.load_state_dict(checkpoint["model"])
 
@@ -148,7 +148,7 @@ def main():
     model = LightGPTInstruct(model, **lora_args).to(args.device)
 
     print("Compiling model")
-    model.compile()
+    model = torch.compile(model, dynamic=True)
 
     optimizer = Adafactor(
         model.parameters(),
@@ -205,7 +205,7 @@ def main():
 
         average_cross_entropy = total_cross_entropy / total_batches
 
-        logger.add_scalar("cross entropy", average_cross_entropy, epoch)
+        logger.add_scalar("Cross Entropy", average_cross_entropy, epoch)
 
         print(
             f"Epoch {epoch}: Cross Entropy: {average_cross_entropy:.5f}",
@@ -225,7 +225,7 @@ def main():
 
             perplexity = perplexity_metric.compute()
 
-            logger.add_scalar("perplexity", perplexity, epoch)
+            logger.add_scalar("Perplexity", perplexity, epoch)
 
             print(f"Perplexity: {perplexity:.3f}")
 

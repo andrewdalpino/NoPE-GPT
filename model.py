@@ -102,11 +102,12 @@ class LightGPT(Module):
 
         num_tokens_to_copy = min(num_tokens, self.token_embeddings.num_embeddings)
 
-        new_embeddings.weight[:num_tokens_to_copy, :] = self.token_embeddings.weight[
+        new_embeddings.weight.data[:num_tokens_to_copy, :] = self.token_embeddings.weight.data[
             :num_tokens_to_copy, :
         ]
 
-        self.token_embeddings = new_embeddings
+        self.token_embeddings.weight.data = new_embeddings.weight.data
+        self.token_embeddings.num_embeddings = new_embeddings.weight.data.shape
 
         self.output_layer.weight = self.token_embeddings.weight
 
@@ -371,14 +372,11 @@ class LightGPTInstruct(Module):
         if alpha <= 0.0:
             raise ValueError(f"Alpha must be greater than 0, {alpha} given.")
 
-        if vocabulary_size != model.vocabulary_size:
-            model.resize_token_embeddings(vocabulary_size)
-
         for param in model.parameters():
             param.requires_grad = False
 
-        for i in range(vocabulary_size, model.vocabulary_size, -1):
-            model.output_layer.weight[i - 1].requires_grad = True
+        if vocabulary_size != model.vocabulary_size:
+            model.resize_token_embeddings(vocabulary_size)
 
         for module in model.body:
             out_features, in_features = module.attention.in_proj_weight.shape
