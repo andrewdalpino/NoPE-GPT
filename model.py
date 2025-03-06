@@ -102,12 +102,17 @@ class LightGPT(Module):
 
         num_tokens_to_copy = min(num_tokens, self.token_embeddings.num_embeddings)
 
-        new_embeddings.weight.data[:num_tokens_to_copy, :] = self.token_embeddings.weight.data[
-            :num_tokens_to_copy, :
-        ]
+        new_embeddings.weight[:num_tokens_to_copy, :] = (
+            self.token_embeddings.weight[:num_tokens_to_copy, :]
+        )
 
-        self.token_embeddings.weight.data = new_embeddings.weight.data
-        self.token_embeddings.num_embeddings = new_embeddings.weight.data.shape
+        for i in range(num_tokens_to_copy, num_tokens):
+            new_embeddings.weight[i] = torch.randn(
+                new_embeddings.embedding_dim
+            ) / sqrt(new_embeddings.embedding_dim)
+
+        self.token_embeddings.weight = new_embeddings.weight
+        self.token_embeddings.num_embeddings = new_embeddings.num_embeddings
 
         self.output_layer.weight = self.token_embeddings.weight
 
@@ -378,6 +383,8 @@ class LightGPTInstruct(Module):
         if vocabulary_size != model.vocabulary_size:
             model.resize_token_embeddings(vocabulary_size)
 
+            model.token_embeddings.weight.requires_grad = True
+
         for module in model.body:
             out_features, in_features = module.attention.in_proj_weight.shape
 
@@ -402,12 +409,6 @@ class LightGPTInstruct(Module):
                         "weight",
                         LoRA.from_linear(layer, rank, alpha, dropout),
                     )
-
-        register_parametrization(
-            model.output_layer,
-            "weight",
-            LoRA.from_linear(model.output_layer, rank, alpha, dropout),
-        )
 
         self.model = model
 
@@ -653,9 +654,7 @@ class LoRA(Module):
         if alpha <= 0.0:
             raise ValueError(f"Alpha must be greater than 0, {alpha} given.")
 
-        std_dev = 1.0 / sqrt(rank)
-
-        self.lora_a = Parameter(torch.randn(rank, in_features) * std_dev)
+        self.lora_a = Parameter(torch.randn(rank, in_features) / sqrt(rank))
         self.lora_b = Parameter(torch.zeros(out_features, rank))
 
         self.dropout = Dropout1d(p=dropout)

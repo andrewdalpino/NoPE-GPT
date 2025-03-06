@@ -108,7 +108,7 @@ def main():
         max_tokens_per_sample=args.max_tokens_per_sample,
     )
 
-    training, testing, drop = random_split(dataset, (0.15, 0.02, 0.83))
+    training, testing = random_split(dataset, (0.95, 0.05))
 
     train_loader = DataLoader(
         training,
@@ -116,7 +116,6 @@ def main():
         batch_size=args.batch_size,
         pin_memory="cpu" not in args.device,
         shuffle=True,
-        num_workers=args.num_dataset_processes,
     )
     test_loader = DataLoader(
         testing,
@@ -124,7 +123,6 @@ def main():
         batch_size=args.batch_size,
         pin_memory="cpu" not in args.device,
         shuffle=False,
-        num_workers=args.num_dataset_processes,
     )
 
     model = LightGPT(**model_args)
@@ -132,7 +130,11 @@ def main():
     if args.activation_checkpointing:
         model.enable_activation_checkpointing()
 
-    model = torch.compile(model, dynamic=True)
+    # Compensate for poorly designed PyTorch compiled state dicts.
+    for key in list(checkpoint["model"].keys()):
+        checkpoint["model"][key.replace("_orig_mod.", "")] = checkpoint["model"].pop(
+            key
+        )
 
     model.load_state_dict(checkpoint["model"])
 
@@ -146,9 +148,6 @@ def main():
     }
 
     model = LightGPTInstruct(model, **lora_args).to(args.device)
-
-    print("Compiling model")
-    model = torch.compile(model, dynamic=True)
 
     optimizer = Adafactor(
         model.parameters(),

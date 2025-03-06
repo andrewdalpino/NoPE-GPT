@@ -53,7 +53,11 @@ def main():
 
     model = LightGPT(**checkpoint["model_args"])
 
-    model = torch.compile(model)
+    # Compensate for poorly designed PyTorch compiled state dicts.
+    for key in list(checkpoint["model"].keys()):
+        checkpoint["model"][key.replace("_orig_mod.", "")] = checkpoint["model"].pop(
+            key
+        )
 
     model.load_state_dict(checkpoint["model"])
 
@@ -79,16 +83,11 @@ def main():
 
         model = LightGPTInstruct(model, **checkpoint["lora_args"])
 
-        model = torch.compile(model)
-
         model.load_state_dict(checkpoint["lora"], strict=False)
 
         model.merge_lora_parameters()
 
         print("LoRA checkpoint loaded")
-
-        print(model.model.token_embeddings.weight)
-        exit()
 
     model.to(args.device)
 
@@ -98,11 +97,12 @@ def main():
         prompt = input("Enter a prompt: ")
 
         if args.lora_path:
-            instruction = SmolTalk.PROMPT_TEMPLATE.format(role="system", message="Provide a concise, objective summary of the input text in up to three sentences, focusing on key actions and intentions without using second or third person pronouns.")
+            instruction = SmolTalk.PROMPT_TEMPLATE.format(
+                role="system",
+                message="You're an AI assistant for text re-writing. Rewrite the input text to make it more professional and formal while retaining its essential content.",
+            )
 
             instruction += SmolTalk.PROMPT_TEMPLATE.format(role="user", message=prompt)
-
-            instruction += "<|im_start|>assistant\n"
 
             prompt = instruction
 

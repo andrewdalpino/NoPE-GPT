@@ -220,8 +220,8 @@ class SmolTalk(Dataset):
 
         tokens = tokens[: self.max_tokens_per_sample + 1]
 
-        sample = deepcopy(tokens[:-1])
-        labels = deepcopy(tokens[1:])
+        sample = tokens[:-1]
+        labels = tokens[1:]
 
         x = torch.tensor(sample, dtype=torch.int64)
         y = torch.tensor(labels, dtype=torch.int64)
