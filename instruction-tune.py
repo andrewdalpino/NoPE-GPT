@@ -27,19 +27,9 @@ def main():
     parser = ArgumentParser(description="Instruction-tune the GPT.")
 
     parser.add_argument(
-        "--base_model_path", default="./checkpoints/checkpoint.pt", type=str
+        "--base_checkpoint_path", default="./checkpoints/checkpoint.pt", type=str
     )
-    parser.add_argument(
-        "--dataset_subset",
-        default="smol-magpie-ultra",
-        choices={
-            "smol-magpie-ultra",
-            "smol-constraints",
-            "smol-rewrite",
-            "smol-summarize",
-            "all",
-        },
-    )
+    parser.add_argument("--dataset_subset", default="all", choices=SmolTalk.SUBSETS)
     parser.add_argument("--num_dataset_processes", default=4, type=int)
     parser.add_argument("--max_tokens_per_sample", default=1048, type=int)
     parser.add_argument("--batch_size", default=1, type=int)
@@ -55,7 +45,7 @@ def main():
     parser.add_argument("--eval_interval", default=1, type=int)
     parser.add_argument("--checkpoint_interval", default=1, type=int)
     parser.add_argument(
-        "--checkpoint_path", default="./checkpoints/lora_instruct.pt", type=str
+        "--checkpoint_path", default="./checkpoints/instruct.pt", type=str
     )
     parser.add_argument("--resume", action="store_true")
     parser.add_argument("--run_dir_path", default="./runs/instruction-tune", type=str)
@@ -84,7 +74,7 @@ def main():
     logger = SummaryWriter(args.run_dir_path)
 
     checkpoint = torch.load(
-        args.base_model_path, map_location=args.device, weights_only=True
+        args.base_checkpoint_path, map_location=args.device, weights_only=True
     )
 
     model_args = checkpoint["model_args"]
@@ -130,13 +120,13 @@ def main():
     if args.activation_checkpointing:
         model.enable_activation_checkpointing()
 
-    # Compensate for poorly designed PyTorch compiled state dicts.
-    for key in list(checkpoint["model"].keys()):
-        checkpoint["model"][key.replace("_orig_mod.", "")] = checkpoint["model"].pop(
-            key
-        )
+    state_dict = checkpoint["model"]
 
-    model.load_state_dict(checkpoint["model"])
+    # Compensate for poorly designed PyTorch compiled state dicts.
+    for key in list(state_dict.keys()):
+        state_dict[key.replace("_orig_mod.", "")] = state_dict.pop(key)
+
+    model.load_state_dict(state_dict)
 
     print("Model checkpoint loaded")
 
@@ -163,6 +153,7 @@ def main():
             args.checkpoint_path, map_location=args.device, weights_only=True
         )
 
+        model.model.token_embeddings.load_state_dict(checkpoint["token_embeddings"])
         model.load_state_dict(checkpoint["lora"], strict=False)
         optimizer.load_state_dict(checkpoint["optimizer"])
         starting_epoch += checkpoint["epoch"]
@@ -235,8 +226,9 @@ def main():
         if epoch % args.checkpoint_interval == 0:
             checkpoint = {
                 "epoch": epoch,
+                "token_embeddings": model.token_embeddings_state_dict(),
                 "lora_args": lora_args,
-                "lora": model.state_dict(),
+                "lora": model.lora_state_dict(),
                 "optimizer": optimizer.state_dict(),
             }
 

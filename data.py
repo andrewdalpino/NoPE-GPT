@@ -147,6 +147,23 @@ class Fineweb(IterableDataset):
 class SmolTalk(Dataset):
     DATASET_NAME = "HuggingFaceTB/smoltalk"
 
+    SUBSETS = {
+        "all",
+        "apigen-80k",
+        "everyday-conversations",
+        "explore-instruct-rewriting",
+        "longalign",
+        "metamathqa-50k",
+        "numina-cot-100k",
+        "openhermes-100k",
+        "self-oss-instruct",
+        "smol-constraints",
+        "smol-magpie-ultra",
+        "smol-rewrite",
+        "smol-summarize",
+        "systemchats-30k",
+    }
+
     PADDING_INDEX = -100
 
     PROMPT_TEMPLATE = "<|im_start|>{role}\n{message}\n<|im_end|>\n"
@@ -154,18 +171,12 @@ class SmolTalk(Dataset):
     def __init__(
         self,
         tokenizer: Encoding,
-        subset: str = "smol-magpie-ultra",
+        subset: str = "all",
         max_tokens_per_sample: int = 1024,
     ):
         super().__init__()
 
-        if subset not in {
-            "smol-magpie-ultra",
-            "smol-constraints",
-            "smol-rewrite",
-            "smol-summarize",
-            "all",
-        }:
+        if subset not in self.SUBSETS:
             raise ValueError(f"Invalid subset, {subset} given.")
 
         if max_tokens_per_sample < 1:

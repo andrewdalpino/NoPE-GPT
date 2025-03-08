@@ -102,14 +102,14 @@ class LightGPT(Module):
 
         num_tokens_to_copy = min(num_tokens, self.token_embeddings.num_embeddings)
 
-        new_embeddings.weight[:num_tokens_to_copy, :] = (
-            self.token_embeddings.weight[:num_tokens_to_copy, :]
-        )
+        new_embeddings.weight[:num_tokens_to_copy, :] = self.token_embeddings.weight[
+            :num_tokens_to_copy, :
+        ]
 
         for i in range(num_tokens_to_copy, num_tokens):
-            new_embeddings.weight[i] = torch.randn(
+            new_embeddings.weight[i] = torch.randn(new_embeddings.embedding_dim) / sqrt(
                 new_embeddings.embedding_dim
-            ) / sqrt(new_embeddings.embedding_dim)
+            )
 
         self.token_embeddings.weight = new_embeddings.weight
         self.token_embeddings.num_embeddings = new_embeddings.num_embeddings
@@ -383,7 +383,7 @@ class LightGPTInstruct(Module):
         if vocabulary_size != model.vocabulary_size:
             model.resize_token_embeddings(vocabulary_size)
 
-            model.token_embeddings.weight.requires_grad = True
+        model.token_embeddings.weight.requires_grad = True
 
         for module in model.body:
             out_features, in_features = module.attention.in_proj_weight.shape
@@ -416,7 +416,10 @@ class LightGPTInstruct(Module):
     def num_trainable_params(self) -> int:
         return self.model.num_trainable_params
 
-    def state_dict(self):
+    def token_embeddings_state_dict(self):
+        return self.model.token_embeddings.state_dict()
+
+    def lora_state_dict(self):
         return {
             name: module
             for name, module in super().state_dict().items()

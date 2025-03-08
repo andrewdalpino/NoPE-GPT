@@ -53,13 +53,13 @@ def main():
 
     model = LightGPT(**checkpoint["model_args"])
 
-    # Compensate for poorly designed PyTorch compiled state dicts.
-    for key in list(checkpoint["model"].keys()):
-        checkpoint["model"][key.replace("_orig_mod.", "")] = checkpoint["model"].pop(
-            key
-        )
+    state_dict = checkpoint["model"]
 
-    model.load_state_dict(checkpoint["model"])
+    # Compensate for poorly designed PyTorch compiled state dicts.
+    for key in list(state_dict.keys()):
+        state_dict[key.replace("_orig_mod.", "")] = state_dict.pop(key)
+
+    model.load_state_dict(state_dict)
 
     print("Model checkpoint loaded")
 
@@ -83,6 +83,7 @@ def main():
 
         model = LightGPTInstruct(model, **checkpoint["lora_args"])
 
+        model.model.token_embeddings.load_state_dict(checkpoint["token_embeddings"])
         model.load_state_dict(checkpoint["lora"], strict=False)
 
         model.merge_lora_parameters()
