@@ -75,7 +75,7 @@ def main():
             },
         )
 
-        eos_indices = {*eos_indices, tokenizer.n_vocab + 1}
+        eos_indices = {*eos_indices, tokenizer.n_vocab - 1}
 
         checkpoint = torch.load(
             args.lora_path, map_location=args.device, weights_only=True

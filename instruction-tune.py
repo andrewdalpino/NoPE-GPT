@@ -30,14 +30,14 @@ def main():
         "--base_checkpoint_path", default="./checkpoints/checkpoint.pt", type=str
     )
     parser.add_argument("--dataset_subset", default="all", choices=SmolTalk.SUBSETS)
-    parser.add_argument("--num_dataset_processes", default=4, type=int)
+    parser.add_argument("--num_dataset_processes", default=2, type=int)
     parser.add_argument("--max_tokens_per_sample", default=1048, type=int)
     parser.add_argument("--batch_size", default=1, type=int)
     parser.add_argument("--gradient_accumulation_steps", default=64, type=int)
     parser.add_argument("--learning_rate", default=5e-4, type=float)
     parser.add_argument("--rms_decay", default=-0.8, type=float)
     parser.add_argument("--optimizer_low_memory", action="store_true")
-    parser.add_argument("--num_epochs", default=4, type=int)
+    parser.add_argument("--num_epochs", default=3, type=int)
     parser.add_argument("--rank", default=8, type=int)
     parser.add_argument("--alpha", default=1.0, type=float)
     parser.add_argument("--dropout", default=0.05, type=float)
@@ -98,7 +98,7 @@ def main():
         max_tokens_per_sample=args.max_tokens_per_sample,
     )
 
-    training, testing = random_split(dataset, (0.95, 0.05))
+    training, testing = random_split(dataset, (0.9, 0.1))
 
     train_loader = DataLoader(
         training,
@@ -106,6 +106,7 @@ def main():
         batch_size=args.batch_size,
         pin_memory="cpu" not in args.device,
         shuffle=True,
+        num_workers=args.num_dataset_processes,
     )
     test_loader = DataLoader(
         testing,
@@ -113,6 +114,7 @@ def main():
         batch_size=args.batch_size,
         pin_memory="cpu" not in args.device,
         shuffle=False,
+        num_workers=args.num_dataset_processes,
     )
 
     model = LightGPT(**model_args)
