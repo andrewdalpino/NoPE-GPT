@@ -175,15 +175,13 @@ class LightGPT(Module):
         """Return a state dict containing only the LoRA parameters."""
 
         return {
-            name: module
-            for name, module in self.state_dict().items()
-            if "lora" in name
+            name: module for name, module in self.state_dict().items() if "lora" in name
         }
 
     def merge_lora_parameters(self) -> Self:
         """Merge the LoRA parameters with the original parameters."""
 
-        for module in self.modules():
+        for module in self.body:
             if hasattr(module, "parametrizations"):
                 lora_params = [name for name in module.parametrizations.keys()]
 

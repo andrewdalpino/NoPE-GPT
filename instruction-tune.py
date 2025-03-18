@@ -97,7 +97,7 @@ def main():
         max_tokens_per_sample=args.max_tokens_per_sample,
     )
 
-    training, testing, drop = random_split(dataset, (0.0001, 0.0001, 0.9998))
+    training, testing = random_split(dataset, (0.9, 0.1))
 
     train_loader = DataLoader(
         training,

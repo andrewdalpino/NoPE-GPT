@@ -45,13 +45,9 @@ def main():
 
     model = LightGPT(**checkpoint["model_args"])
 
-    state_dict = checkpoint["model"]
+    model = torch.compile(model)
 
-    # Compensate for poorly designed PyTorch compiled state dicts.
-    for key in list(state_dict.keys()):
-        state_dict[key.replace("_orig_mod.", "")] = state_dict.pop(key)
-
-    model.load_state_dict(state_dict)
+    model.load_state_dict(checkpoint["model"])
 
     print("Model checkpoint loaded")
 
@@ -63,9 +59,8 @@ def main():
 
     eos_indices = {tokenizer.eot_token}
 
-    model = (
-        model.resize_token_embeddings(tokenizer.n_vocab)
-        .add_lora_parameters(**checkpoint["lora_args"])
+    model = model.resize_token_embeddings(tokenizer.n_vocab).add_lora_parameters(
+        **checkpoint["lora_args"]
     )
 
     model.token_embeddings.load_state_dict(checkpoint["token_embeddings"])

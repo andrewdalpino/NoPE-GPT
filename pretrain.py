@@ -229,7 +229,7 @@ def main():
 
     if args.resume:
         checkpoint = torch.load(
-            args.checkpoint_path, map_location="cpu", weights_only=True
+            args.checkpoint_path, map_location="cpu", weights_only=False
         )  # Always load into CPU RAM first to prevent CUDA out-of-memory errors.
 
         model.load_state_dict(checkpoint["model"])
