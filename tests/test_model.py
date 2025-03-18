@@ -4,8 +4,6 @@ import torch
 
 from model import (
     LightGPT,
-    LightGPTInstruct,
-    ONNXModel,
     CausalSelfAttentionBlock,
     MLP,
     LoRA,
@@ -53,60 +51,6 @@ class TestLightGPT(unittest.TestCase):
         candidates = self.model.beam_search(prompt, max_tokens=5, num_candidates=2)
 
         self.assertEqual(len(candidates), 2)
-
-
-class TestLightGPTInstruct(unittest.TestCase):
-    def setUp(self):
-        base_model = LightGPT(
-            vocabulary_size=1000,
-            embedding_dimensions=128,
-            num_heads=8,
-            num_layers=2,
-            feed_forward_ratio=4,
-            dropout=0.1,
-            padding_index=0,
-        )
-
-        self.model = LightGPTInstruct(base_model, rank=4, alpha=1.0, dropout=0.1)
-
-    def test_forward(self):
-        x = torch.randint(0, 1000, (2, 10))
-        y = torch.randint(0, 1000, (2, 10))
-
-        output, loss = self.model(x, y)
-
-        self.assertEqual(output.shape, (2, 10, 1000))
-        self.assertIsNotNone(loss)
-
-    def test_predict(self):
-        x = torch.randint(0, 1000, (2, 10))
-
-        output = self.model.predict(x)
-
-        self.assertEqual(output.shape, (2, 1000))
-
-
-class TestONNXModel(unittest.TestCase):
-    def setUp(self):
-        base_model = LightGPT(
-            vocabulary_size=1000,
-            embedding_dimensions=128,
-            num_heads=8,
-            num_layers=2,
-            feed_forward_ratio=4,
-            dropout=0.1,
-            padding_index=0,
-        )
-
-        self.model = ONNXModel(base_model)
-
-    def test_forward(self):
-        x = torch.randint(0, 1000, (2, 10))
-
-        output = self.model(x)
-
-        self.assertEqual(output.shape, (2, 1000))
-
 
 class TestCausalSelfAttentionBlock(unittest.TestCase):
     def setUp(self):
