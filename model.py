@@ -84,7 +84,7 @@ class LightGPT(Module):
 
         self.vocabulary_size = vocabulary_size
 
-    @cached_property
+    @property
     def num_trainable_params(self) -> int:
         return sum(param.numel() for param in self.parameters() if param.requires_grad)
 
