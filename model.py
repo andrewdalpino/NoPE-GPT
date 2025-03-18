@@ -1,6 +1,6 @@
 from math import sqrt
 from dataclasses import dataclass
-from functools import partial, cached_property
+from functools import partial
 from typing import Iterator, Self
 
 import torch
@@ -90,7 +90,7 @@ class LightGPT(Module):
 
     def enable_activation_checkpointing(self) -> Self:
         """Instead of memorizing the activations of the forward pass, recompute them at various checkpoints."""
-        
+
         self.checkpoint = partial(torch_checkpoint, use_reentrant=False)
 
         return self
