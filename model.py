@@ -88,9 +88,12 @@ class LightGPT(Module):
     def num_trainable_params(self) -> int:
         return sum(param.numel() for param in self.parameters() if param.requires_grad)
 
-    def enable_activation_checkpointing(self) -> None:
+    def enable_activation_checkpointing(self) -> Self:
         """Instead of memorizing the activations of the forward pass, recompute them at various checkpoints."""
+        
         self.checkpoint = partial(torch_checkpoint, use_reentrant=False)
+
+        return self
 
     def freeze_model_parameters(self) -> Self:
         """Freeze all model parameters to prevent them from being updated during training."""
