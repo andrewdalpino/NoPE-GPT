@@ -423,7 +423,7 @@ class LightGPT(Module):
 
 
 class LightGPTHuggingFaceConfig(PretrainedConfig):
-    """Provide a monolithic configuration object to compensate for HuggingFace Transformers' API."""
+    """Provide a monolithic configuration object to compensate for HuggingFace Transformers' poor API design."""
 
     model_type = "lightgpt"
 
