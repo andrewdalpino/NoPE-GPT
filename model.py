@@ -92,21 +92,42 @@ class LightGPT(Module):
         """Instead of memorizing the activations of the forward pass, recompute them at various checkpoints."""
         self.checkpoint = partial(torch_checkpoint, use_reentrant=False)
 
+    def freeze_model_parameters(self) -> Self:
+        """Freeze all model parameters to prevent them from being updated during training."""
+
+        for param in self.parameters():
+            param.requires_grad = False
+
+        return self
+
+    def unfreeze_token_embeddings(self) -> Self:
+        """Unfreeze the token embeddings to allow for fine-tuning."""
+
+        for param in self.token_embeddings.parameters():
+            param.requires_grad = True
+
+        return self
+
     @torch.no_grad()
-    def resize_token_embeddings(self, num_tokens: int) -> None:
+    def resize_token_embeddings(self, vocabulary_size: int) -> Self:
         """Resize the token embeddings to accommodate a new vocabulary size."""
 
-        new_embeddings = Embedding(num_tokens, self.token_embeddings.embedding_dim).to(
-            self.token_embeddings.weight.device
-        )
+        if vocabulary_size <= 0:
+            raise ValueError(
+                f"Vocabulary size must be greater than 0, {vocabulary_size} given."
+            )
 
-        num_tokens_to_copy = min(num_tokens, self.token_embeddings.num_embeddings)
+        new_embeddings = Embedding(
+            vocabulary_size, self.token_embeddings.embedding_dim
+        ).to(self.token_embeddings.weight.device)
+
+        num_tokens_to_copy = min(vocabulary_size, self.token_embeddings.num_embeddings)
 
         new_embeddings.weight[:num_tokens_to_copy, :] = self.token_embeddings.weight[
             :num_tokens_to_copy, :
         ]
 
-        for i in range(num_tokens_to_copy, num_tokens):
+        for i in range(num_tokens_to_copy, vocabulary_size):
             new_embeddings.weight[i] = torch.randn(new_embeddings.embedding_dim) / sqrt(
                 new_embeddings.embedding_dim
             )
@@ -116,7 +137,60 @@ class LightGPT(Module):
 
         self.output_layer.weight = self.token_embeddings.weight
 
-        self.vocabulary_size = num_tokens
+        self.vocabulary_size = vocabulary_size
+
+        return self
+
+    def add_lora_parameters(self, rank: int, alpha: float, dropout: float) -> Self:
+        """Reparameterize the weights of the model using LoRA."""
+
+        for module in self.body:
+            out_features, in_features = module.attention.in_proj_weight.shape
+
+            register_parametrization(
+                module.attention,
+                "in_proj_weight",
+                LoRA(in_features, out_features, rank, alpha, dropout),
+            )
+
+            out_features, in_features = module.attention.out_proj.weight.shape
+
+            register_parametrization(
+                module.attention.out_proj,
+                "weight",
+                LoRA(in_features, out_features, rank, alpha, dropout),
+            )
+
+            for layer in module.mlp.layers:
+                if isinstance(layer, Linear):
+                    register_parametrization(
+                        layer,
+                        "weight",
+                        LoRA.from_linear(layer, rank, alpha, dropout),
+                    )
+
+        return self
+
+    def lora_state_dict(self) -> dict[str, Tensor]:
+        """Return a state dict containing only the LoRA parameters."""
+
+        return {
+            name: module
+            for name, module in self.state_dict().items()
+            if "lora" in name
+        }
+
+    def merge_lora_parameters(self) -> Self:
+        """Merge the LoRA parameters with the original parameters."""
+
+        for module in self.modules():
+            if hasattr(module, "parametrizations"):
+                lora_params = [name for name in module.parametrizations.keys()]
+
+                for name in lora_params:
+                    remove_parametrizations(module, name, leave_parametrized=True)
+
+        return self
 
     def forward(
         self, x: Tensor, y: Tensor | None = None
@@ -350,135 +424,6 @@ class LightGPT(Module):
         return completed
 
 
-class LightGPTInstruct(Module):
-    """
-    A wrapper for pretrained GPT models that applies a LoRA reparameterization
-    to the intermediate layers of the network.
-    """
-
-    def __init__(
-        self,
-        model: LightGPT,
-        vocabulary_size: int,
-        rank: int,
-        alpha: float,
-        dropout: float,
-    ):
-        super().__init__()
-
-        if vocabulary_size <= 0:
-            raise ValueError(
-                f"Vocabulary size must be greater than 0, {vocabulary_size} given."
-            )
-
-        if rank <= 0:
-            raise ValueError(f"Rank must be greater than 0, {rank} given.")
-
-        if alpha <= 0.0:
-            raise ValueError(f"Alpha must be greater than 0, {alpha} given.")
-
-        for param in model.parameters():
-            param.requires_grad = False
-
-        if vocabulary_size != model.vocabulary_size:
-            model.resize_token_embeddings(vocabulary_size)
-
-        model.token_embeddings.weight.requires_grad = True
-
-        for module in model.body:
-            out_features, in_features = module.attention.in_proj_weight.shape
-
-            register_parametrization(
-                module.attention,
-                "in_proj_weight",
-                LoRA(in_features, out_features, rank, alpha, dropout),
-            )
-
-            out_features, in_features = module.attention.out_proj.weight.shape
-
-            register_parametrization(
-                module.attention.out_proj,
-                "weight",
-                LoRA(in_features, out_features, rank, alpha, dropout),
-            )
-
-            for layer in module.mlp.layers:
-                if isinstance(layer, Linear):
-                    register_parametrization(
-                        layer,
-                        "weight",
-                        LoRA.from_linear(layer, rank, alpha, dropout),
-                    )
-
-        self.model = model
-
-    @property
-    def num_trainable_params(self) -> int:
-        return self.model.num_trainable_params
-
-    def token_embeddings_state_dict(self):
-        return self.model.token_embeddings.state_dict()
-
-    def lora_state_dict(self):
-        return {
-            name: module
-            for name, module in super().state_dict().items()
-            if "lora" in name
-        }
-
-    def merge_lora_parameters(self):
-        """Merge the LoRA parameters with the original parameters."""
-
-        for module in self.model.modules():
-            if hasattr(module, "parametrizations"):
-                lora_params = [name for name in module.parametrizations.keys()]
-
-                for name in lora_params:
-                    remove_parametrizations(module, name, leave_parametrized=True)
-
-    def forward(
-        self, x: Tensor, y: Tensor | None = None
-    ) -> tuple[Tensor, Tensor | None]:
-        return self.model.forward(x, y)
-
-    def predict(self, x: Tensor) -> Tensor:
-        return self.model.predict(x)
-
-    def generate(
-        self,
-        prompt: Tensor,
-        max_tokens: int = 1000,
-        context_length: int = 1024,
-        temperature: float = 1.0,
-        top_k: int = 500,
-        top_p: float = 0.9,
-        eos_indices: set = set(),
-    ) -> Iterator:
-        return self.model.generate(
-            prompt, max_tokens, context_length, temperature, top_k, top_p, eos_indices
-        )
-
-    def beam_search(
-        self,
-        prompt: Tensor,
-        max_tokens: int = 100,
-        context_length: int = 1024,
-        num_candidates: int = 3,
-        beam_width: int = 16,
-        length_penalty: float = 1.0,
-        eos_indices: set = set(),
-    ) -> list:
-        return self.model.beam_search(
-            prompt,
-            max_tokens,
-            context_length,
-            num_candidates,
-            beam_width,
-            length_penalty,
-            eos_indices,
-        )
-
-
 class LightGPTHuggingFaceConfig(PretrainedConfig):
     """Provide a monolithic configuration object to compensate for HuggingFace Transformers' API."""
 
@@ -533,18 +478,6 @@ class LightGPTHuggingFaceModel(PreTrainedModel):
             "logits": logits,
             "loss": loss,
         }
-
-
-class ONNXModel(Module):
-    """This wrapper provides a clean inferencing API for ONNX production models."""
-
-    def __init__(self, model: LightGPT | LightGPTInstruct):
-        super().__init__()
-
-        self.model = model
-
-    def forward(self, x: Tensor) -> Tensor:
-        return self.model.predict(x)
 
 
 class CausalSelfAttentionBlock(Module):
@@ -657,10 +590,13 @@ class LoRA(Module):
         if alpha <= 0.0:
             raise ValueError(f"Alpha must be greater than 0, {alpha} given.")
 
+        if dropout < 0 or dropout > 1:
+            raise ValueError(f"Dropout must be between 0 and 1, {dropout} given")
+
         self.lora_a = Parameter(torch.randn(rank, in_features) / sqrt(rank))
         self.lora_b = Parameter(torch.zeros(out_features, rank))
 
-        self.dropout = Dropout1d(p=dropout)
+        self.dropout = Dropout1d(dropout)
 
         self.alpha = alpha
 

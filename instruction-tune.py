@@ -13,10 +13,8 @@ from torch.utils.tensorboard import SummaryWriter
 
 from torchmetrics.text import Perplexity
 
-from model import LightGPT, LightGPTInstruct
+from model import LightGPT
 from data import SmolTalk
-
-import tiktoken
 
 from tiktoken import Encoding
 
@@ -33,7 +31,7 @@ def main():
     parser.add_argument("--num_dataset_processes", default=2, type=int)
     parser.add_argument("--max_tokens_per_sample", default=1048, type=int)
     parser.add_argument("--batch_size", default=1, type=int)
-    parser.add_argument("--gradient_accumulation_steps", default=64, type=int)
+    parser.add_argument("--gradient_accumulation_steps", default=128, type=int)
     parser.add_argument("--learning_rate", default=5e-4, type=float)
     parser.add_argument("--rms_decay", default=-0.8, type=float)
     parser.add_argument("--optimizer_low_memory", action="store_true")
@@ -74,12 +72,13 @@ def main():
     logger = SummaryWriter(args.run_dir_path)
 
     checkpoint = torch.load(
-        args.base_checkpoint_path, map_location=args.device, weights_only=True
+        args.base_checkpoint_path, map_location=args.device, weights_only=False
     )
 
-    model_args = checkpoint["model_args"]
+    tokenizer = checkpoint["tokenizer"]
 
-    tokenizer = tiktoken.get_encoding(checkpoint["token_encoding"])
+    im_start_index = tokenizer.n_vocab
+    im_end_index = tokenizer.n_vocab + 1
 
     tokenizer = Encoding(
         name=tokenizer.name,
@@ -87,8 +86,8 @@ def main():
         mergeable_ranks=tokenizer._mergeable_ranks,
         special_tokens={
             **tokenizer._special_tokens,
-            "<|im_start|>": tokenizer.n_vocab,
-            "<|im_end|>": tokenizer.n_vocab + 1,
+            "<|im_start|>": im_start_index,
+            "<|im_end|>": im_end_index,
         },
     )
 
@@ -98,7 +97,7 @@ def main():
         max_tokens_per_sample=args.max_tokens_per_sample,
     )
 
-    training, testing = random_split(dataset, (0.9, 0.1))
+    training, testing, drop = random_split(dataset, (0.0001, 0.0001, 0.9998))
 
     train_loader = DataLoader(
         training,
@@ -117,6 +116,8 @@ def main():
         num_workers=args.num_dataset_processes,
     )
 
+    model_args = checkpoint["model_args"]
+
     model = LightGPT(**model_args)
 
     if args.activation_checkpointing:
@@ -124,7 +125,7 @@ def main():
 
     state_dict = checkpoint["model"]
 
-    # Compensate for poorly designed PyTorch compiled state dicts.
+    # Compensate for poorly implemented compiled state dicts.
     for key in list(state_dict.keys()):
         state_dict[key.replace("_orig_mod.", "")] = state_dict.pop(key)
 
@@ -133,13 +134,18 @@ def main():
     print("Model checkpoint loaded")
 
     lora_args = {
-        "vocabulary_size": tokenizer.n_vocab,
         "rank": args.rank,
         "alpha": args.alpha,
         "dropout": args.dropout,
     }
 
-    model = LightGPTInstruct(model, **lora_args).to(args.device)
+    model = (
+        model.freeze_model_parameters()
+        .resize_token_embeddings(tokenizer.n_vocab)
+        .unfreeze_token_embeddings()
+        .add_lora_parameters(**lora_args)
+        .to(args.device)
+    )
 
     optimizer = Adafactor(
         model.parameters(),
@@ -155,9 +161,11 @@ def main():
             args.checkpoint_path, map_location=args.device, weights_only=True
         )
 
-        model.model.token_embeddings.load_state_dict(checkpoint["token_embeddings"])
+        model.token_embeddings.load_state_dict(checkpoint["token_embeddings"])
         model.load_state_dict(checkpoint["lora"], strict=False)
+
         optimizer.load_state_dict(checkpoint["optimizer"])
+
         starting_epoch += checkpoint["epoch"]
 
         print("Previous checkpoint resumed successfully")
@@ -228,7 +236,8 @@ def main():
         if epoch % args.checkpoint_interval == 0:
             checkpoint = {
                 "epoch": epoch,
-                "token_embeddings": model.token_embeddings_state_dict(),
+                "tokenizer": tokenizer,
+                "token_embeddings": model.token_embeddings.state_dict(),
                 "lora_args": lora_args,
                 "lora": model.lora_state_dict(),
                 "optimizer": optimizer.state_dict(),

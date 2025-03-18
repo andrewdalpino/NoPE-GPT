@@ -326,10 +326,10 @@ def main():
         if epoch % args.checkpoint_interval == 0 and IS_MASTER:
             checkpoint = {
                 "epoch": epoch,
+                "tokenizer": tokenizer,
                 "model_args": model_args,
                 "model": model.state_dict(),
                 "optimizer": optimizer.state_dict(),
-                "token_encoding": args.token_encoding,
             }
 
             torch.save(checkpoint, args.checkpoint_path)
