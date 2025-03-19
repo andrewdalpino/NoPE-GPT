@@ -58,7 +58,6 @@ class TestFineweb(unittest.TestCase):
 
         self.assertEqual(dataset.tokens_per_sample, 1024)
         self.assertEqual(dataset.samples_per_epoch, 4)
-        self.assertEqual(dataset.split, "train")
 
     def test_init_with_invalid_subset(self):
         """Test initialization with invalid subset"""

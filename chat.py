@@ -9,6 +9,7 @@ from torch.cuda import is_available as cuda_is_available
 
 from model import LightGPT
 from data import SmolTalk
+from memory import ChatMemory
 
 
 def main():
@@ -77,20 +78,28 @@ def main():
     system_message = input("Enter a system message: ")
 
     if not system_message:
-        system_message = "You're a helpful AI assistant. Your job is to assist the user with their queries."
+        system_message = "You're a helpful AI assistant named LightGPT. Your job is to assist the user with their queries."
 
     system_message = SmolTalk.PROMPT_TEMPLATE.format(
         role="system", message=system_message
     )
+
+    system_message_tokens = tokenizer.encode(system_message, allowed_special="all")
+
+    max_message_history_length = args.context_length - len(system_message_tokens)
+
+    memory = ChatMemory(max_message_history_length)
 
     while True:
         instruction = input("Enter a prompt: ")
 
         instruction = SmolTalk.PROMPT_TEMPLATE.format(role="user", message=instruction)
 
-        prompt = system_message + instruction
+        instruction = tokenizer.encode(instruction, allowed_special="all")
 
-        prompt = tokenizer.encode(prompt, allowed_special="all")
+        memory.add_message(instruction)
+
+        prompt = system_message + memory.get_history()
 
         prompt = torch.tensor(prompt, dtype=torch.int64, device=args.device)
 
@@ -104,12 +113,16 @@ def main():
             eos_indices,
         )
 
+        message = []
+
         for token in generator:
             out = tokenizer.decode_single_token_bytes(token).decode(
                 "utf-8", errors="replace"
             )
 
             print(out, end="", flush=True)
+
+            message.append(token.item())
 
             if token.item() == tokenizer.n_vocab - 1:
                 generator.close()
@@ -118,6 +131,8 @@ def main():
 
         if "y" not in input("Go again? (yes|no): ").lower():
             break
+
+        memory.add_message(message)
 
 
 if __name__ == "__main__":

@@ -110,7 +110,6 @@ class Fineweb(IterableDataset):
         max_offset = end - tokens_per_epoch
 
         self.memmap = memmap
-        self.split = split
         self.tokens_per_sample = tokens_per_sample
         self.samples_per_epoch = samples_per_epoch
         self.start = start

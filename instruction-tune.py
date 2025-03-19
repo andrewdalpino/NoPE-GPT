@@ -36,6 +36,7 @@ def main():
     parser.add_argument("--rms_decay", default=-0.8, type=float)
     parser.add_argument("--optimizer_low_memory", action="store_true")
     parser.add_argument("--num_epochs", default=3, type=int)
+    parser.add_argument("--train_embeddings", default=True, type=bool)
     parser.add_argument("--rank", default=8, type=int)
     parser.add_argument("--alpha", default=1.0, type=float)
     parser.add_argument("--dropout", default=0.05, type=float)
@@ -142,10 +143,12 @@ def main():
     model = (
         model.freeze_model_parameters()
         .resize_token_embeddings(tokenizer.n_vocab)
-        .unfreeze_token_embeddings()
         .add_lora_parameters(**lora_args)
         .to(args.device)
     )
+
+    if args.train_embeddings:
+        model = model.unfreeze_token_embeddings()
 
     optimizer = Adafactor(
         model.parameters(),

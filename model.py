@@ -138,7 +138,7 @@ class LightGPT(Module):
         self.token_embeddings.weight = new_embeddings.weight
         self.token_embeddings.num_embeddings = new_embeddings.num_embeddings
 
-        self.output_layer.weight = self.token_embeddings.weight
+        self.output_layer.weight = self.token_embeddings.weight  # Retie weights
 
         self.vocabulary_size = vocabulary_size
 
@@ -262,6 +262,11 @@ class LightGPT(Module):
         if max_tokens <= 0:
             raise ValueError(f"Max tokens must be greater than 0, {max_tokens} given.")
 
+        if context_length <= 0:
+            raise ValueError(
+                f"Context length must be greater than 0, {context_length} given."
+            )
+
         if temperature <= 0:
             raise ValueError(
                 f"Temperature must be greater than 0, {temperature} given."
@@ -331,6 +336,11 @@ class LightGPT(Module):
 
         if max_tokens <= 0:
             raise ValueError(f"Max tokens must be greater than 0, {max_tokens} given.")
+
+        if context_length <= 0:
+            raise ValueError(
+                f"Context length must be greater than 0, {context_length} given."
+            )
 
         if num_candidates <= 0:
             raise ValueError(
