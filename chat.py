@@ -99,7 +99,7 @@ def main():
 
         memory.add_message(instruction)
 
-        prompt = system_message + memory.get_history()
+        prompt = system_message_tokens + memory.get_history()
 
         prompt = torch.tensor(prompt, dtype=torch.int64, device=args.device)
 

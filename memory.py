@@ -1,5 +1,5 @@
 class ChatMemory:
-    """A simple short-term memory for a chat session."""
+    """A simple short-term memory store for a chat session."""
 
     def __init__(self, max_length: int):
         self.max_length = max_length
@@ -13,7 +13,7 @@ class ChatMemory:
 
         self.total_length += len(message)
 
-        while len(self.total_length) >= self.max_length:
+        while self.total_length >= self.max_length:
             old_message = self.messages.pop(0)
 
             self.total_length -= len(old_message)
