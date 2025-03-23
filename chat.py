@@ -126,9 +126,6 @@ def main():
 
             message_tokens.append(token.item())
 
-            if token.item() == tokenizer.n_vocab - 1:
-                generator.close()
-
         print("\n")
 
         if "y" not in input("Go again? (yes|no): ").lower():

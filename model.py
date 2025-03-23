@@ -88,31 +88,25 @@ class LightGPT(Module):
     def num_trainable_params(self) -> int:
         return sum(param.numel() for param in self.parameters() if param.requires_grad)
 
-    def enable_activation_checkpointing(self) -> Self:
+    def enable_activation_checkpointing(self) -> None:
         """Instead of memorizing the activations of the forward pass, recompute them at various checkpoints."""
 
         self.checkpoint = partial(torch_checkpoint, use_reentrant=False)
 
-        return self
-
-    def freeze_model_parameters(self) -> Self:
+    def freeze_model_parameters(self) -> None:
         """Freeze all model parameters to prevent them from being updated during training."""
 
         for param in self.parameters():
             param.requires_grad = False
 
-        return self
-
-    def unfreeze_token_embeddings(self) -> Self:
+    def unfreeze_token_embeddings(self) -> None:
         """Unfreeze the token embeddings to allow for fine-tuning."""
 
         for param in self.token_embeddings.parameters():
             param.requires_grad = True
 
-        return self
-
     @torch.no_grad()
-    def resize_token_embeddings(self, vocabulary_size: int) -> Self:
+    def resize_token_embeddings(self, vocabulary_size: int) -> None:
         """Resize the token embeddings to accommodate a new vocabulary size."""
 
         if vocabulary_size <= 0:
@@ -142,9 +136,7 @@ class LightGPT(Module):
 
         self.vocabulary_size = vocabulary_size
 
-        return self
-
-    def add_lora_parameters(self, rank: int, alpha: float, dropout: float) -> Self:
+    def add_lora_parameters(self, rank: int, alpha: float, dropout: float) -> None:
         """Reparameterize the weights of the model using LoRA."""
 
         for module in self.body:
@@ -172,8 +164,6 @@ class LightGPT(Module):
                         LoRA.from_linear(layer, rank, alpha, dropout),
                     )
 
-        return self
-
     def lora_state_dict(self) -> dict[str, Tensor]:
         """Return a state dict containing only the LoRA parameters."""
 
@@ -181,7 +171,7 @@ class LightGPT(Module):
             name: module for name, module in self.state_dict().items() if "lora" in name
         }
 
-    def merge_lora_parameters(self) -> Self:
+    def merge_lora_parameters(self) -> None:
         """Merge the LoRA parameters with the original parameters."""
 
         for module in self.body:
@@ -190,8 +180,6 @@ class LightGPT(Module):
 
                 for name in lora_params:
                     remove_parametrizations(module, name, leave_parametrized=True)
-
-        return self
 
     def forward(
         self, x: Tensor, y: Tensor | None = None

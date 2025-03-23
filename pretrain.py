@@ -40,7 +40,9 @@ DDP_BACKEND = "nccl"
 
 
 def main():
-    parser = ArgumentParser(description="Pretrain the GPT.")
+    parser = ArgumentParser(
+        description="Pretrain LightGPT using FSDP and the Fineweb dataset."
+    )
 
     parser.add_argument(
         "--dataset_subset",
