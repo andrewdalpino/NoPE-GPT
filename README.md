@@ -127,7 +127,7 @@ python instruction-tune.py --rank=4 --alpha=0.8 --dropout=0.1
 | Argument | Default | Type | Description |
 |---|---|---|---|
 | --base_model_path | "./checkpoints/checkpoint.pt" | string | The path to the base checkpoint on disk. |
-| --dataset_subset | "all" | str | The subset of the SmolTalk dataset to train on. Options are `all`, `smol-magpie-ultra`, `smol-constraints`, `smol-rewrite`, and `smol-summarize`. |
+| --dataset_subset | "all" | str | The subset of the SmolTalk dataset to train on. Options are `all`, `apigen-80k`, `everyday-conversations`, `explore-instruct-rewriting`, `longalign`, `metamathqa-50k`, `numina-cot-100k`, `openhermes-100k`, `self-oss-instruct`, `smol-constraints`, `smol-magpie-ultra`, `smol-rewrite`, `smol-summarize`, and `systemchats-30k`. |
 | --max_tokens_per_sample | 1024 | int | The maximum number of tokens to pack into a single training sequence. |
 | --train_on_inputs | False | bool | Should we mask the system and user parts of the training sequences i.e. only train on the supervised output? |
 | --batch_size | 1 | int | The number of samples to pass through the network at a time. |
