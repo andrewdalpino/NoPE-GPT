@@ -95,11 +95,13 @@ def main():
 
         instruction = SmolTalk.PROMPT_TEMPLATE.format(role="user", message=instruction)
 
-        instruction = tokenizer.encode(instruction, allowed_special="all")
+        instruction_tokens = tokenizer.encode(instruction, allowed_special="all")
 
-        memory.add_message(instruction)
+        memory.add_message(instruction_tokens)
 
-        prompt = system_message_tokens + memory.get_history()
+        prompt = system_message_tokens
+
+        prompt.extend(memory.get_history())
 
         prompt = torch.tensor(prompt, dtype=torch.int64, device=args.device)
 
@@ -113,7 +115,7 @@ def main():
             eos_indices,
         )
 
-        message = []
+        message_tokens = []
 
         for token in generator:
             out = tokenizer.decode_single_token_bytes(token).decode(
@@ -122,7 +124,7 @@ def main():
 
             print(out, end="", flush=True)
 
-            message.append(token.item())
+            message_tokens.append(token.item())
 
             if token.item() == tokenizer.n_vocab - 1:
                 generator.close()
@@ -132,7 +134,7 @@ def main():
         if "y" not in input("Go again? (yes|no): ").lower():
             break
 
-        memory.add_message(message)
+        memory.add_message(message_tokens)
 
 
 if __name__ == "__main__":

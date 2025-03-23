@@ -1,7 +1,6 @@
 import random
 
 from os import path, remove as delete_file
-from copy import deepcopy
 from functools import partial
 
 from datasets import load_dataset
@@ -22,6 +21,8 @@ from tqdm import tqdm
 class Fineweb(IterableDataset):
     DATASET_NAME = "HuggingFaceFW/fineweb"
 
+    SUBSETS = {"sample-10BT", "sample-100BT", "sample-350BT"}
+
     PADDING_INDEX = -100
 
     def __init__(
@@ -36,7 +37,7 @@ class Fineweb(IterableDataset):
         super().__init__()
 
         if subset != None:
-            if subset not in {"sample-10BT", "sample-100BT", "sample-350BT"}:
+            if subset not in self.SUBSETS:
                 raise ValueError(f"Invalid subset, {subset} given.")
 
         if split not in {"train", "test"}:
@@ -172,6 +173,7 @@ class SmolTalk(Dataset):
         tokenizer: Encoding,
         subset: str = "all",
         max_tokens_per_sample: int = 1024,
+        train_on_inputs: bool = False,
     ):
         super().__init__()
 
@@ -188,6 +190,7 @@ class SmolTalk(Dataset):
         self.dataset = load_dataset(self.DATASET_NAME, subset, split="train")
 
         self.max_tokens_per_sample = max_tokens_per_sample
+        self.train_on_inputs = train_on_inputs
 
     def collate(self, batch: list) -> tuple[Tensor, Tensor]:
         """Custom collate function adds left padding to batched samples."""
@@ -218,22 +221,29 @@ class SmolTalk(Dataset):
     def __getitem__(self, index: int):
         row = self.dataset[index]
 
-        text = ""
+        samples, labels = [], []
 
         for message in row["messages"]:
-            text += self.PROMPT_TEMPLATE.format(
+            text = self.PROMPT_TEMPLATE.format(
                 role=message["role"],
                 message=message["content"],
             )
 
-        tokens = self.tokenizer.encode(text, allowed_special="all")
+            tokens = self.tokenizer.encode(text, allowed_special="all")
 
-        tokens = tokens[: self.max_tokens_per_sample + 1]
+            tokens.append(self.tokenizer.eot_token)
 
-        sample = tokens[:-1]
-        labels = tokens[1:]
+            if len(tokens) > self.max_tokens_per_sample:
+                break
 
-        x = torch.tensor(sample, dtype=torch.int64)
+            samples.extend(tokens[:-1])
+
+            if self.train_on_inputs:
+                labels.extend(tokens[1:])
+            else:
+                labels.extend([self.PADDING_INDEX] * (len(tokens) - 1))
+
+        x = torch.tensor(samples, dtype=torch.int64)
         y = torch.tensor(labels, dtype=torch.int64)
 
         assert x.shape == y.shape, "Sample / label shape mismatch."

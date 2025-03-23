@@ -30,6 +30,7 @@ def main():
     parser.add_argument("--dataset_subset", default="all", choices=SmolTalk.SUBSETS)
     parser.add_argument("--num_dataset_processes", default=2, type=int)
     parser.add_argument("--max_tokens_per_sample", default=1048, type=int)
+    parser.add_argument("--train_on_inputs", action="store_true")
     parser.add_argument("--batch_size", default=1, type=int)
     parser.add_argument("--gradient_accumulation_steps", default=128, type=int)
     parser.add_argument("--learning_rate", default=5e-4, type=float)
@@ -96,9 +97,10 @@ def main():
         tokenizer,
         subset=args.dataset_subset,
         max_tokens_per_sample=args.max_tokens_per_sample,
+        train_on_inputs=args.train_on_inputs,
     )
 
-    training, testing, _ = random_split(dataset, (0.09, 0.01, 0.9))
+    training, testing = random_split(dataset, (0.9, 0.1))
 
     train_loader = DataLoader(
         training,
@@ -161,7 +163,7 @@ def main():
 
     if args.resume:
         checkpoint = torch.load(
-            args.checkpoint_path, map_location=args.device, weights_only=True
+            args.checkpoint_path, map_location=args.device, weights_only=False
         )
 
         model.token_embeddings.load_state_dict(checkpoint["token_embeddings"])
