@@ -19,6 +19,11 @@ from tqdm import tqdm
 
 
 class Fineweb(IterableDataset):
+    """
+    The Fineweb dataset by HuggingFace, tokenized and stored as a memory map for fast
+    access during pre-training.
+    """
+
     DATASET_NAME = "HuggingFaceFW/fineweb"
 
     SUBSETS = {"sample-10BT", "sample-100BT", "sample-350BT"}
@@ -145,6 +150,11 @@ class Fineweb(IterableDataset):
 
 
 class SmolTalk(Dataset):
+    """
+    The SmolTalk dataset by HuggingFace formatted as ChatML messages with masked
+    system and user prompts.
+    """
+
     DATASET_NAME = "HuggingFaceTB/smoltalk"
 
     SUBSETS = {

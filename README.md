@@ -10,9 +10,9 @@ LightGPT is a lightweight generative pretrained Transformer (GPT) language model
 
 - **Fully Open-source**: Unlike closed-source LLMs, LightGPT provides both the model weights *and* the source code to train, fine-tune, export, and generate text from the model using your own hardware. With the help of the open-source software community, we aim to democratize access to AI and continually improve the models.
 
-## Suggested Pretraining Configurations
+## Recommended Pretraining Configurations
 
-Below is a table of some suggested model pretraining configurations but feel free to experiment with settings on your own. See the `model_sizing.ipynb` notebook to estimate the memory and compute requirements for your model configuration.
+Below is a table of some recommended model pretraining configurations but feel free to experiment with settings on your own. See the `model_sizing.ipynb` notebook to estimate the memory and compute requirements for your model configuration.
 
 | Name | Vocab. Size | Embedding Dim. | Attn. Heads | Layers | Parameters | Min. Training Tokens |
 |---|---|---|---|---|---|---|
@@ -102,7 +102,7 @@ torchrun --standalone --nnodes=1 --nproc-per-node=8 pretrain.py --batch_size=16 
 
 ## Instruction-tuning
 
-Instruction-tuning is a supervised training technique focused on developing specialized objectives such as chatting, text summarization, chain-of-thought, and prompt rewriting. The overall objective is still to predict the next token but the dataset has been curated for these more specialized objectives. In addition, we introduce two special tokens (`<|im_start|>` and `<|im_end|>`) that demarcate system, user, and assistant messages. We use the SmolTalk dataset by HuggingFace as the fine-tuning corpus because it includes a broad range of data for different tasks.
+Instruction-tuning is a supervised training technique focused on developing specialized objectives such as chatting, text summarization, chain-of-thought, and prompt rewriting. The overall objective is still to predict the next token but the dataset has been curated for these more specialized objectives. In addition, we introduce two special tokens (`<|im_start|>` and `<|im_end|>`) that demarcate system, user, and assistant messages for use in the ChatML format. We use the SmolTalk dataset by HuggingFace as the fine-tuning corpus because it includes supervised training data for a broad range of tasks.
 
 Unlike pre-training, fine-tuning is not as resource intensive due to training much fewer parameters. The default arguments will work for most GPUs with 12G of VRAM or more.
 
@@ -217,7 +217,7 @@ python chat.py --temperature=0.8 --top_k=300
 |---|---|---|---|
 | --checkpoint_path | "./checkpoints/checkpoint.pt" | string | The path to the base checkpoint file on disk. |
 | --lora_path | None | string | The path to the LoRA checkpoint. |
-| --max_tokens | 1000 | int | The maximum number of tokens that the model should generate per sample. |
+| --max_tokens | 500 | int | The maximum number of tokens that the model should generate per sample. |
 | --context_length | 1024 | int | The number of tokens to keep within the context window of the current prediction. |
 | --temperature | 1.0 | float | The amount of regularization applied to the candidate token probabilities. |
 | --top_k | 500 | int | Only sample from this many candidate tokens with the highest probabilities. |

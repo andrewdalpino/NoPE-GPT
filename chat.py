@@ -21,7 +21,7 @@ def main():
         "--checkpoint_path", default="./checkpoints/checkpoint.pt", type=str
     )
     parser.add_argument("--lora_path", default="./checkpoints/instruct.pt", type=str)
-    parser.add_argument("--max_tokens", default=1000, type=int)
+    parser.add_argument("--max_tokens", default=500, type=int)
     parser.add_argument("--context_length", default=1024, type=int)
     parser.add_argument("--temperature", default=1.0, type=float)
     parser.add_argument("--top_k", default=500, type=int)
@@ -78,7 +78,7 @@ def main():
     system_message = input("Enter a system message: ")
 
     if not system_message:
-        system_message = "You're a helpful AI assistant named LightGPT. Your job is to assist the user with their queries."
+        system_message = "You're a helpful AI assistant named LightGPT. Your job is to answer the user's queries."
 
     system_message = SmolTalk.PROMPT_TEMPLATE.format(
         role="system", message=system_message
