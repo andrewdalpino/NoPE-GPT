@@ -11,11 +11,11 @@ from torch.nn import (
     ModuleList,
     Sequential,
     Embedding,
-    MultiheadAttention,
     Linear,
     SiLU,
     RMSNorm,
     Dropout1d,
+    Dropout2d,
     CrossEntropyLoss,
     Parameter,
 )
@@ -503,12 +503,10 @@ class CausalSelfAttentionBlock(Module):
             raise ValueError(f"Dropout must be between 0 and 1, {dropout} given")
 
         self.norm1 = RMSNorm(embedding_dimensions)
-        self.attention = MultiheadAttention(
+        self.attention = SelfAttention(
             embedding_dimensions,
             num_heads,
-            batch_first=True,
             dropout=dropout,
-            bias=False,
         )
 
         hidden_dimensions = feed_forward_ratio * embedding_dimensions
@@ -518,7 +516,7 @@ class CausalSelfAttentionBlock(Module):
 
     def forward(self, x: Tensor, attention_mask: Tensor) -> Tensor:
         z = self.norm1(x)
-        z, _ = self.attention(z, z, z, attn_mask=attention_mask, is_causal=True)
+        z = self.attention(z, attention_mask=attention_mask, kv_cache=None)
 
         z = x + z  # Residual connection
 
@@ -528,6 +526,66 @@ class CausalSelfAttentionBlock(Module):
         z = self.mlp(z)
 
         z = x + z  # Residual connection
+
+        return z
+
+
+class SelfAttention(Module):
+    def __init__(
+        self,
+        embedding_dimensions: int,
+        num_heads: int,
+        dropout: float,
+    ):
+        super().__init__()
+
+        self.in_proj_weight = Parameter(
+            torch.randn(3 * embedding_dimensions, embedding_dimensions)
+            / sqrt(embedding_dimensions),
+        )
+
+        self.dropout = Dropout2d(p=dropout)
+
+        self.out_proj = Linear(
+            embedding_dimensions,
+            embedding_dimensions,
+            bias=False,
+        )
+
+        head_dimensions = embedding_dimensions // num_heads
+        scale = 1.0 / sqrt(head_dimensions)
+
+        self.embedding_dimensions = embedding_dimensions
+        self.num_heads = num_heads
+        self.head_dimensions = head_dimensions
+        self.scale = scale
+
+    def forward(self, x: Tensor, attention_mask: Tensor) -> Tensor:
+        b, t, d = x.size()
+
+        z = x @ self.in_proj_weight.transpose(0, 1)
+
+        q, k, v = z.split(self.embedding_dimensions, dim=-1)
+
+        k = k.view(b, t, self.num_heads, self.head_dimensions).transpose(1, 2)
+        q = q.view(b, t, self.num_heads, self.head_dimensions).transpose(1, 2)
+        v = v.view(b, t, self.num_heads, self.head_dimensions).transpose(1, 2)
+
+        z = q @ k.transpose(-2, -1)
+
+        z *= self.scale
+
+        z += attention_mask[:t, :t]
+
+        z = softmax(z, dim=-1)
+
+        z = self.dropout(z)
+
+        z = z @ v
+
+        z = z.transpose(1, 2).contiguous().view(b, t, d)
+
+        z = self.out_proj(z)
 
         return z
 
