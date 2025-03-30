@@ -40,9 +40,7 @@ DDP_BACKEND = "nccl"
 
 
 def main():
-    parser = ArgumentParser(
-        description="Pretrain LightGPT using FSDP and the Fineweb dataset."
-    )
+    parser = ArgumentParser(description="Pretrain the GPT.")
 
     parser.add_argument(
         "--dataset_subset",
@@ -56,7 +54,7 @@ def main():
     )
     parser.add_argument("--dataset_path", default="./datasets", type=str)
     parser.add_argument("--num_dataset_processes", default=8, type=int)
-    parser.add_argument("--batch_size", default=1, type=int)
+    parser.add_argument("--batch_size", default=2, type=int)
     parser.add_argument("--gradient_accumulation_steps", default=128, type=int)
     parser.add_argument("--tokens_per_sample", default=1024, type=int)
     parser.add_argument("--samples_per_epoch", default=4096, type=int)

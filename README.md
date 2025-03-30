@@ -76,7 +76,7 @@ torchrun --standalone --nnodes=1 --nproc-per-node=8 pretrain.py --batch_size=16 
 | --dataset_subset | "sample-10BT" | str | The subset of the Fineweb dataset to train on. Options are `sample-10BT`, `sample-100BT`, and `sample-350BT`. Set to `None` to train on the full 15T token dataset. |
 | --token_encoding | "r50k_base" | str | The Tiktoken encoding scheme to use when tokenizing the dataset. Options include `r50k_base`, `p50k_base`, `cl100k_base`, and `o200k_base`. |
 | --dataset_path | "./datasets" | str | The path to the preprocessed dataset files on disk. |
-| --batch_size | 1 | int | The number of samples of size `tokens_per_sample` to pass through the network at a time. |
+| --batch_size | 2 | int | The number of samples of size `tokens_per_sample` to pass through the network at a time. |
 | --gradient_accumulation_steps | 128 | int | The number of batches to pass through the network before updating the model weights. |
 | --tokens_per_sample | 1024 | int | The number of tokens to pack into a single training sequence. This is sometimes called the block size or context length. |
 | --samples_per_epoch | 4096 | int | The number of training samples to pass through the network every epoch. |
@@ -130,8 +130,8 @@ python instruction-tune.py --rank=4 --alpha=0.8 --dropout=0.1
 | --dataset_subset | "all" | str | The subset of the SmolTalk dataset to train on. Options are `all`, `apigen-80k`, `everyday-conversations`, `explore-instruct-rewriting`, `longalign`, `metamathqa-50k`, `numina-cot-100k`, `openhermes-100k`, `self-oss-instruct`, `smol-constraints`, `smol-magpie-ultra`, `smol-rewrite`, `smol-summarize`, and `systemchats-30k`. |
 | --max_tokens_per_sample | 1024 | int | The maximum number of tokens to pack into a single training sequence. |
 | --train_on_inputs | False | bool | Should we mask the system and user parts of the training sequences i.e. only train on the supervised output? |
-| --batch_size | 1 | int | The number of samples to pass through the network at a time. |
-| --gradient_accumulation_steps | 128 | int | The number of batches to pass through the network before updating the weights. |
+| --batch_size | 2 | int | The number of samples to pass through the network at a time. |
+| --gradient_accumulation_steps | 64 | int | The number of batches to pass through the network before updating the weights. |
 | --learning_rate | 5e-4 | float | The learning rate of the Adafactor optimizer. |
 | --rms_decay | -0.8 | float | The decay rate of the RMS coefficient of the Adafactor optimizer. |
 | --low_memory_optimizer | False | bool | Should the optimizer reduce its memory consumption in exchange for a slightly slower runtime? |

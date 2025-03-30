@@ -79,6 +79,7 @@ class LightGPT(Module):
         self.loss_function = CrossEntropyLoss(ignore_index=padding_index)
 
         self.vocabulary_size = vocabulary_size
+        self.embedding_dimensions = embedding_dimensions
 
     @property
     def num_trainable_params(self) -> int:
@@ -88,10 +89,6 @@ class LightGPT(Module):
         """Instead of memorizing the activations of the forward pass, recompute them at various checkpoints."""
 
         self.checkpoint = partial(torch_checkpoint, use_reentrant=False)
-
-    def migrate(self) -> None:
-        for layer in self.body:
-            layer.attention.migrate()
 
     def freeze_model_parameters(self) -> None:
         """Freeze all model parameters to prevent them from being updated during training."""
@@ -114,9 +111,9 @@ class LightGPT(Module):
                 f"Vocabulary size must be greater than 0, {vocabulary_size} given."
             )
 
-        new_embeddings = Embedding(
-            vocabulary_size, self.token_embeddings.embedding_dim
-        ).to(self.token_embeddings.weight.device)
+        new_embeddings = Embedding(vocabulary_size, self.embedding_dimensions).to(
+            self.token_embeddings.weight.device
+        )
 
         num_tokens_to_copy = min(vocabulary_size, self.token_embeddings.num_embeddings)
 
@@ -125,8 +122,8 @@ class LightGPT(Module):
         ]
 
         for i in range(num_tokens_to_copy, vocabulary_size):
-            new_embeddings.weight[i] = torch.randn(new_embeddings.embedding_dim) / sqrt(
-                new_embeddings.embedding_dim
+            new_embeddings.weight[i] = torch.randn(self.embedding_dimensions) / sqrt(
+                self.embedding_dimensions
             )
 
         self.token_embeddings.weight = new_embeddings.weight
@@ -152,13 +149,17 @@ class LightGPT(Module):
                 LoRA.from_linear(module.attention.out_proj, rank, alpha, dropout),
             )
 
-            for layer in module.mlp.layers:
-                if isinstance(layer, Linear):
-                    register_parametrization(
-                        layer,
-                        "weight",
-                        LoRA.from_linear(layer, rank, alpha, dropout),
-                    )
+            register_parametrization(
+                module.mlp.layers[0],
+                "weight",
+                LoRA.from_linear(module.mlp.layers[0], rank, alpha, dropout),
+            )
+
+            register_parametrization(
+                module.mlp.layers[2],
+                "weight",
+                LoRA.from_linear(module.mlp.layers[2], rank, alpha, dropout),
+            )
 
     def lora_state_dict(self) -> dict[str, Tensor]:
         """Return a state dict containing only the LoRA parameters."""
@@ -175,7 +176,7 @@ class LightGPT(Module):
                 lora_params = [name for name in module.parametrizations.keys()]
 
                 for name in lora_params:
-                    remove_parametrizations(module, name, leave_parametrized=True)
+                    remove_parametrizations(module, name)
 
     def forward(
         self, x: Tensor, y: Tensor | None = None
@@ -564,7 +565,7 @@ class SelfAttention(Module):
 
 
 class MLP(Module):
-    """A two-layer fully-connected network with dropout."""
+    """A two layer fully-connected network with dropout."""
 
     def __init__(
         self, embedding_dimensions: int, hidden_dimensions: int, dropout: float
@@ -627,9 +628,9 @@ class LoRA(Module):
 
         self.alpha = alpha
 
-    def forward(self, x: Tensor) -> Tensor:
+    def forward(self, weight: Tensor) -> Tensor:
         z = self.lora_b @ self.dropout(self.lora_a)
 
         z *= self.alpha
 
-        return x + z
+        return weight + z

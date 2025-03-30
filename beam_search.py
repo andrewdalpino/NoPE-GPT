@@ -38,7 +38,7 @@ def main():
         random.seed(args.seed)
 
     checkpoint = torch.load(
-        args.checkpoint_path, map_location=args.device, weights_only=True
+        args.checkpoint_path, map_location=args.device, weights_only=False
     )
 
     tokenizer = checkpoint["tokenizer"]
