@@ -15,7 +15,6 @@ from torch.nn import (
     SiLU,
     RMSNorm,
     Dropout1d,
-    Dropout2d,
     CrossEntropyLoss,
     Parameter,
 )
@@ -49,9 +48,6 @@ class LightGPT(Module):
 
         if num_layers <= 0:
             raise ValueError(f"Num layers must be greater than 0, {num_layers} given.")
-
-        if feed_forward_ratio not in {1, 2, 4}:
-            raise ValueError("Feed-forward ratio must be either 1, 2, or 4.")
 
         token_embeddings = Embedding(
             vocabulary_size, embedding_dimensions, padding_idx=padding_index
@@ -144,20 +140,16 @@ class LightGPT(Module):
         """Reparameterize the weights of the model using LoRA."""
 
         for module in self.body:
-            out_features, in_features = module.attention.in_proj_weight.shape
-
             register_parametrization(
-                module.attention,
-                "in_proj_weight",
-                LoRA(in_features, out_features, rank, alpha, dropout),
+                module.attention.qkv_proj,
+                "weight",
+                LoRA.from_linear(module.attention.qkv_proj, rank, alpha, dropout),
             )
-
-            out_features, in_features = module.attention.out_proj.weight.shape
 
             register_parametrization(
                 module.attention.out_proj,
                 "weight",
-                LoRA(in_features, out_features, rank, alpha, dropout),
+                LoRA.from_linear(module.attention.out_proj, rank, alpha, dropout),
             )
 
             for layer in module.mlp.layers:
@@ -178,7 +170,7 @@ class LightGPT(Module):
     def merge_lora_parameters(self) -> None:
         """Merge the LoRA parameters with the original parameters."""
 
-        for module in self.body:
+        for module in self.modules():
             if hasattr(module, "parametrizations"):
                 lora_params = [name for name in module.parametrizations.keys()]
 
@@ -474,7 +466,7 @@ class LightGPTHuggingFaceModel(PreTrainedModel):
 
 
 class DecoderBlock(Module):
-    """Decoder block with multihead attention, multilayer perceptron,and residual connections."""
+    """Decoder block with multihead attention, multilayer perceptron, and residual connections."""
 
     def __init__(
         self,
@@ -490,11 +482,8 @@ class DecoderBlock(Module):
                 f"Embedding dimensions must be greater than 0, {embedding_dimensions} given."
             )
 
-        if num_heads <= 0:
-            raise ValueError(f"Num heads must be greater than 0, {num_heads} given.")
-
-        if dropout < 0 or dropout > 1:
-            raise ValueError(f"Dropout must be between 0 and 1, {dropout} given")
+        if feed_forward_ratio not in {1, 2, 4}:
+            raise ValueError("Feed-forward ratio must be either 1, 2, or 4.")
 
         self.norm1 = RMSNorm(embedding_dimensions)
         self.attention = SelfAttention(embedding_dimensions, num_heads, dropout)
@@ -521,16 +510,18 @@ class DecoderBlock(Module):
 
 
 class SelfAttention(Module):
+    """Multihead self-attention with causal masking."""
+
     def __init__(self, embedding_dimensions: int, num_heads: int, dropout: float):
         super().__init__()
+
+        if num_heads <= 0:
+            raise ValueError(f"Num heads must be greater than 0, {num_heads} given.")
 
         if embedding_dimensions % num_heads != 0:
             raise ValueError(
                 f"Embedding dimensions must be divisible by num heads, {embedding_dimensions} and {num_heads} given."
             )
-
-        if dropout < 0 or dropout > 1:
-            raise ValueError(f"Dropout must be between 0 and 1, {dropout} given")
 
         self.qkv_proj = Linear(
             embedding_dimensions, 3 * embedding_dimensions, bias=False
@@ -628,9 +619,6 @@ class LoRA(Module):
 
         if alpha <= 0.0:
             raise ValueError(f"Alpha must be greater than 0, {alpha} given.")
-
-        if dropout < 0 or dropout > 1:
-            raise ValueError(f"Dropout must be between 0 and 1, {dropout} given")
 
         self.lora_a = Parameter(torch.randn(rank, in_features) / sqrt(rank))
         self.lora_b = Parameter(torch.zeros(out_features, rank))

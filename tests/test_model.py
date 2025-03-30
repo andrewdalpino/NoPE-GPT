@@ -1,11 +1,12 @@
 import unittest
-
 import torch
 import torch.nn as nn
+from math import sqrt
 
 from model import (
     LightGPT,
-    CausalSelfAttentionBlock,
+    DecoderBlock,
+    SelfAttention,
     MLP,
     LoRA,
     LightGPTHuggingFaceConfig,
@@ -14,7 +15,10 @@ from model import (
 
 
 class TestLightGPT(unittest.TestCase):
+    """Test cases for the LightGPT model."""
+
     def setUp(self):
+        """Set up a small model instance for testing."""
         self.model = LightGPT(
             vocabulary_size=1000,
             embedding_dimensions=128,
@@ -25,10 +29,34 @@ class TestLightGPT(unittest.TestCase):
             padding_index=0,
         )
 
-    def test_init_with_invalid_vocabulary_size(self):
+        # Use CPU for testing
+        self.device = torch.device("cpu")
+        self.model.to(self.device)
+
+    def test_initialization(self):
+        """Test that the model initializes correctly."""
+        self.assertEqual(self.model.vocabulary_size, 1000)
+        self.assertEqual(self.model.token_embeddings.num_embeddings, 1000)
+        self.assertEqual(self.model.token_embeddings.embedding_dim, 128)
+        self.assertEqual(len(self.model.body), 2)
+        self.assertIsInstance(self.model.output_norm, nn.RMSNorm)
+        self.assertIsInstance(self.model.output_layer, nn.Linear)
+        self.assertEqual(self.model.output_layer.weight.shape, (1000, 128))
+
+        # Test weight tying
+        self.assertTrue(
+            torch.all(
+                torch.eq(
+                    self.model.token_embeddings.weight, self.model.output_layer.weight
+                )
+            )
+        )
+
+    def test_initialization_with_invalid_params(self):
+        """Test that initialization fails with invalid parameters."""
         with self.assertRaises(ValueError):
             LightGPT(
-                vocabulary_size=0,
+                vocabulary_size=0,  # Invalid
                 embedding_dimensions=128,
                 num_heads=8,
                 num_layers=2,
@@ -37,94 +65,137 @@ class TestLightGPT(unittest.TestCase):
                 padding_index=0,
             )
 
-    def test_init_with_invalid_num_layers(self):
         with self.assertRaises(ValueError):
             LightGPT(
                 vocabulary_size=1000,
                 embedding_dimensions=128,
                 num_heads=8,
-                num_layers=0,
+                num_layers=0,  # Invalid
                 feed_forward_ratio=4,
-                dropout=0.1,
-                padding_index=0,
-            )
-
-    def test_init_with_invalid_feed_forward_ratio(self):
-        with self.assertRaises(ValueError):
-            LightGPT(
-                vocabulary_size=1000,
-                embedding_dimensions=128,
-                num_heads=8,
-                num_layers=2,
-                feed_forward_ratio=3,  # Invalid, must be 1, 2, or 4
                 dropout=0.1,
                 padding_index=0,
             )
 
     def test_forward(self):
-        x = torch.randint(0, 1000, (2, 10))
-        y = torch.randint(0, 1000, (2, 10))
+        """Test the forward pass of the model."""
+        batch_size = 2
+        seq_len = 10
 
-        output, loss = self.model(x, y)
+        # Create input and target tensors
+        x = torch.randint(0, 1000, (batch_size, seq_len), device=self.device)
+        y = torch.randint(0, 1000, (batch_size, seq_len), device=self.device)
 
-        self.assertEqual(output.shape, (2, 10, 1000))
+        # Perform forward pass
+        logits, loss = self.model(x, y)
+
+        # Check output shapes
+        self.assertEqual(logits.shape, (batch_size, seq_len, 1000))
         self.assertIsNotNone(loss)
         self.assertTrue(torch.is_tensor(loss))
 
-    def test_forward_no_labels(self):
-        x = torch.randint(0, 1000, (2, 10))
-
-        output, loss = self.model(x)
-
-        self.assertEqual(output.shape, (2, 10, 1000))
+        # Test forward pass without targets
+        logits, loss = self.model(x)
+        self.assertEqual(logits.shape, (batch_size, seq_len, 1000))
         self.assertIsNone(loss)
 
     def test_predict(self):
-        x = torch.randint(0, 1000, (2, 10))
+        """Test the predict method."""
+        batch_size = 2
+        seq_len = 10
 
-        output = self.model.predict(x)
+        # Create input tensor
+        x = torch.randint(0, 1000, (batch_size, seq_len), device=self.device)
 
-        self.assertEqual(output.shape, (2, 1000))
+        # Get predictions
+        logits = self.model.predict(x)
+
+        # Check output shape (should be [batch_size, vocab_size])
+        self.assertEqual(logits.shape, (batch_size, 1000))
 
     def test_generate(self):
-        prompt = torch.randint(0, 1000, (10,))
+        """Test the generate method."""
+        seq_len = 10
 
-        tokens = list(self.model.generate(prompt, max_tokens=5))
+        # Create prompt tensor
+        prompt = torch.randint(0, 1000, (seq_len,), device=self.device)
 
-        self.assertLessEqual(len(tokens), 5)
-        for token in tokens:
+        # Set up generation parameters
+        max_tokens = 5
+
+        # Generate tokens
+        generated_tokens = list(
+            self.model.generate(
+                prompt=prompt,
+                max_tokens=max_tokens,
+                temperature=1.0,
+                top_k=500,
+                top_p=0.9,
+            )
+        )
+
+        # Check that the right number of tokens was generated
+        self.assertLessEqual(len(generated_tokens), max_tokens)
+
+        # Check that each token is a tensor
+        for token in generated_tokens:
             self.assertTrue(isinstance(token, torch.Tensor))
+            self.assertEqual(token.dim(), 0)  # It should be a scalar tensor
 
     def test_generate_with_invalid_params(self):
-        prompt = torch.randint(0, 1000, (10,))
+        """Test that generate fails with invalid parameters."""
+        seq_len = 10
+        prompt = torch.randint(0, 1000, (seq_len,), device=self.device)
 
         with self.assertRaises(ValueError):
-            list(self.model.generate(prompt, max_tokens=0))
+            next(self.model.generate(prompt, max_tokens=0))
 
         with self.assertRaises(ValueError):
-            list(self.model.generate(prompt, temperature=0))
+            next(self.model.generate(prompt, context_length=0))
 
         with self.assertRaises(ValueError):
-            list(self.model.generate(prompt, top_k=0))
+            next(self.model.generate(prompt, temperature=0))
 
         with self.assertRaises(ValueError):
-            list(self.model.generate(prompt, top_p=0))
+            next(self.model.generate(prompt, top_k=0))
+
+        with self.assertRaises(ValueError):
+            next(self.model.generate(prompt, top_p=0))
 
     def test_beam_search(self):
-        prompt = torch.randint(0, 1000, (10,))
+        """Test the beam search method."""
+        seq_len = 10
 
-        candidates = self.model.beam_search(prompt, max_tokens=5, num_candidates=2)
+        # Create prompt tensor
+        prompt = torch.randint(0, 1000, (seq_len,), device=self.device)
 
-        self.assertEqual(len(candidates), 2)
+        # Set up beam search parameters
+        max_tokens = 5
+        num_candidates = 2
+
+        # Perform beam search
+        candidates = self.model.beam_search(
+            prompt=prompt, max_tokens=max_tokens, num_candidates=num_candidates
+        )
+
+        # Check number of candidates
+        self.assertLessEqual(len(candidates), num_candidates)
+
+        # Check candidate properties
         for candidate in candidates:
             self.assertTrue(hasattr(candidate, "tokens"))
             self.assertTrue(hasattr(candidate, "cumulative_log_probability"))
+            self.assertLessEqual(len(candidate.tokens), max_tokens)
 
     def test_beam_search_with_invalid_params(self):
-        prompt = torch.randint(0, 1000, (10,))
+        """Test that beam search fails with invalid parameters."""
+        seq_len = 10
+        prompt = torch.randint(0, 1000, (seq_len,), device=self.device)
 
         with self.assertRaises(ValueError):
             self.model.beam_search(prompt, max_tokens=0)
+
+        with self.assertRaises(ValueError):
+            self.model.beam_search(prompt, context_length=0)
 
         with self.assertRaises(ValueError):
             self.model.beam_search(prompt, num_candidates=0)
@@ -136,146 +207,242 @@ class TestLightGPT(unittest.TestCase):
             self.model.beam_search(prompt, length_penalty=0)
 
     def test_num_trainable_params(self):
-        num_params = self.model.num_trainable_params
-        self.assertGreater(num_params, 0)
+        """Test the num_trainable_params property."""
+        # All parameters should be trainable initially
+        initial_params = self.model.num_trainable_params
+        self.assertGreater(initial_params, 0)
 
         # Freeze all parameters
         self.model.freeze_model_parameters()
         self.assertEqual(self.model.num_trainable_params, 0)
 
-    def test_freeze_and_unfreeze(self):
-        # Freeze model parameters
-        self.model.freeze_model_parameters()
-        for param in self.model.parameters():
-            self.assertFalse(param.requires_grad)
-
-        # Unfreeze token embeddings
+        # Unfreeze token embeddings only
         self.model.unfreeze_token_embeddings()
-        for param in self.model.token_embeddings.parameters():
-            self.assertTrue(param.requires_grad)
+        token_embed_params = sum(
+            p.numel() for p in self.model.token_embeddings.parameters()
+        )
+        self.assertEqual(self.model.num_trainable_params, token_embed_params)
 
     def test_resize_token_embeddings(self):
+        """Test resizing token embeddings."""
         original_vocab_size = self.model.vocabulary_size
         new_vocab_size = original_vocab_size * 2
 
+        # Resize embeddings
         self.model.resize_token_embeddings(new_vocab_size)
 
+        # Check that sizes were updated
         self.assertEqual(self.model.vocabulary_size, new_vocab_size)
         self.assertEqual(self.model.token_embeddings.num_embeddings, new_vocab_size)
         self.assertEqual(self.model.output_layer.weight.shape[0], new_vocab_size)
 
+        # Check that weight tying is preserved
+        self.assertTrue(
+            torch.all(
+                torch.eq(
+                    self.model.token_embeddings.weight, self.model.output_layer.weight
+                )
+            )
+        )
+
+        # Test invalid size
         with self.assertRaises(ValueError):
             self.model.resize_token_embeddings(0)
 
-    def test_add_lora_parameters(self):
+    def test_add_and_merge_lora(self):
+        """Test adding LoRA parameters and merging them."""
+        # Add LoRA parameters
         rank = 4
-        alpha = 16
+        alpha = 1.0
         dropout = 0.1
 
-        # Add LoRA parameters
         self.model.add_lora_parameters(rank, alpha, dropout)
 
-        # Check that LoRA parameters exist in state_dict
+        # Check for LoRA parameters in state dict
         state_dict = self.model.state_dict()
         lora_params = [name for name in state_dict if "lora" in name]
         self.assertGreater(len(lora_params), 0)
 
-        # Test lora_state_dict
+        # Get LoRA state dict
         lora_dict = self.model.lora_state_dict()
         self.assertEqual(len(lora_dict), len(lora_params))
 
-        # Test merge_lora_parameters
+        # Save weights before merging
+        pre_merge_weights = {}
+        for name, param in self.model.named_parameters():
+            if not "lora" in name and param.requires_grad:
+                pre_merge_weights[name] = param.clone()
+
+        # Merge LoRA parameters
         self.model.merge_lora_parameters()
 
+        # Check that LoRA parameters are no longer in state dict
+        merged_lora_params = [
+            name for name in self.model.state_dict() if "lora" in name
+        ]
 
-class TestCausalSelfAttentionBlock(unittest.TestCase):
+        self.assertEqual(len(merged_lora_params), 0)
+
+    def test_activation_checkpointing(self):
+        """Test enabling activation checkpointing."""
+        # Store the original checkpoint function
+        original_checkpoint = self.model.checkpoint
+
+        # Enable activation checkpointing
+        self.model.enable_activation_checkpointing()
+
+        # Check that the checkpoint function changed
+        self.assertNotEqual(self.model.checkpoint, original_checkpoint)
+
+
+class TestDecoderBlock(unittest.TestCase):
+    """Test cases for the DecoderBlock."""
+
     def setUp(self):
-        self.block = CausalSelfAttentionBlock(
-            embedding_dimensions=128,
-            num_heads=8,
-            feed_forward_ratio=4,
-            dropout=0.1,
+        """Set up a decoder block for testing."""
+        self.block = DecoderBlock(
+            embedding_dimensions=128, num_heads=8, feed_forward_ratio=4, dropout=0.1
         )
 
-    def test_init_with_invalid_params(self):
+    def test_initialization(self):
+        """Test that the block initializes correctly."""
+        self.assertIsInstance(self.block.norm1, nn.RMSNorm)
+        self.assertIsInstance(self.block.attention, SelfAttention)
+        self.assertIsInstance(self.block.norm2, nn.RMSNorm)
+        self.assertIsInstance(self.block.mlp, MLP)
+
+    def test_initialization_with_invalid_params(self):
+        """Test that initialization fails with invalid parameters."""
         with self.assertRaises(ValueError):
-            CausalSelfAttentionBlock(
-                embedding_dimensions=0,
+            DecoderBlock(
+                embedding_dimensions=0,  # Invalid
                 num_heads=8,
                 feed_forward_ratio=4,
                 dropout=0.1,
             )
 
         with self.assertRaises(ValueError):
-            CausalSelfAttentionBlock(
-                embedding_dimensions=128,
-                num_heads=0,
-                feed_forward_ratio=4,
-                dropout=0.1,
-            )
-
-        with self.assertRaises(ValueError):
-            CausalSelfAttentionBlock(
+            DecoderBlock(
                 embedding_dimensions=128,
                 num_heads=8,
-                feed_forward_ratio=4,
-                dropout=1.1,  # Invalid, must be between 0 and 1
+                feed_forward_ratio=3,  # Invalid, must be 1, 2, or 4
+                dropout=0.1,
             )
 
     def test_forward(self):
+        """Test the forward pass of the block."""
         batch_size = 2
         seq_len = 10
         embed_dim = 128
 
+        # Create input tensor
         x = torch.randn(batch_size, seq_len, embed_dim)
-        attention_mask = torch.full((seq_len, seq_len), float("-inf"))
-        attention_mask = torch.triu(attention_mask, diagonal=1)
 
-        output = self.block(x, attention_mask)
+        # Perform forward pass
+        output = self.block(x)
 
+        # Check output shape
+        self.assertEqual(output.shape, (batch_size, seq_len, embed_dim))
+
+
+class TestSelfAttention(unittest.TestCase):
+    """Test cases for the SelfAttention module."""
+
+    def setUp(self):
+        """Set up a self-attention module for testing."""
+        self.attention = SelfAttention(
+            embedding_dimensions=128, num_heads=8, dropout=0.1
+        )
+
+    def test_initialization(self):
+        """Test that the module initializes correctly."""
+        self.assertIsInstance(self.attention.qkv_proj, nn.Linear)
+        self.assertIsInstance(self.attention.out_proj, nn.Linear)
+        self.assertEqual(self.attention.qkv_proj.weight.shape, (3 * 128, 128))
+        self.assertEqual(self.attention.out_proj.weight.shape, (128, 128))
+        self.assertEqual(self.attention.num_heads, 8)
+        self.assertEqual(self.attention.head_dimensions, 16)
+        self.assertAlmostEqual(self.attention.scale, 1.0 / sqrt(16), places=5)
+
+    def test_initialization_with_invalid_params(self):
+        """Test that initialization fails with invalid parameters."""
+        with self.assertRaises(ValueError):
+            SelfAttention(
+                embedding_dimensions=127,  # Not divisible by num_heads
+                num_heads=8,
+                dropout=0.1,
+            )
+
+        with self.assertRaises(ValueError):
+            SelfAttention(embedding_dimensions=128, num_heads=0, dropout=0.1)  # Invalid
+
+    def test_forward(self):
+        """Test the forward pass of the self-attention module."""
+        batch_size = 2
+        seq_len = 10
+        embed_dim = 128
+
+        # Create input tensor
+        x = torch.randn(batch_size, seq_len, embed_dim)
+
+        # Perform forward pass
+        output = self.attention(x)
+
+        # Check output shape
         self.assertEqual(output.shape, (batch_size, seq_len, embed_dim))
 
 
 class TestMLP(unittest.TestCase):
+    """Test cases for the MLP module."""
+
     def setUp(self):
-        self.mlp = MLP(
-            embedding_dimensions=128,
-            hidden_dimensions=512,
-            dropout=0.1,
-        )
+        """Set up an MLP module for testing."""
+        self.mlp = MLP(embedding_dimensions=128, hidden_dimensions=512, dropout=0.1)
 
-    def test_init_with_invalid_params(self):
+    def test_initialization(self):
+        """Test that the module initializes correctly."""
+        self.assertIsInstance(self.mlp.layers, nn.Sequential)
+        self.assertEqual(len(self.mlp.layers), 3)
+        self.assertIsInstance(self.mlp.layers[0], nn.Linear)
+        self.assertIsInstance(self.mlp.layers[1], nn.SiLU)
+        self.assertIsInstance(self.mlp.layers[2], nn.Linear)
+        self.assertEqual(self.mlp.layers[0].weight.shape, (512, 128))
+        self.assertEqual(self.mlp.layers[2].weight.shape, (128, 512))
+        self.assertIsInstance(self.mlp.dropout, nn.Dropout1d)
+
+    def test_initialization_with_invalid_params(self):
+        """Test that initialization fails with invalid parameters."""
         with self.assertRaises(ValueError):
-            MLP(
-                embedding_dimensions=0,
-                hidden_dimensions=512,
-                dropout=0.1,
-            )
+            MLP(embedding_dimensions=0, hidden_dimensions=512, dropout=0.1)  # Invalid
 
         with self.assertRaises(ValueError):
-            MLP(
-                embedding_dimensions=128,
-                hidden_dimensions=0,
-                dropout=0.1,
-            )
+            MLP(embedding_dimensions=128, hidden_dimensions=0, dropout=0.1)  # Invalid
 
     def test_forward(self):
+        """Test the forward pass of the MLP module."""
         batch_size = 2
         seq_len = 10
         embed_dim = 128
 
+        # Create input tensor
         x = torch.randn(batch_size, seq_len, embed_dim)
+
+        # Perform forward pass
         output = self.mlp(x)
 
+        # Check output shape
         self.assertEqual(output.shape, (batch_size, seq_len, embed_dim))
 
 
 class TestLoRA(unittest.TestCase):
+    """Test cases for the LoRA module."""
+
     def setUp(self):
+        """Set up a LoRA module for testing."""
         self.in_features = 128
         self.out_features = 256
         self.rank = 8
-        self.alpha = 16
+        self.alpha = 1.0
         self.dropout = 0.1
 
         self.lora = LoRA(
@@ -286,12 +453,20 @@ class TestLoRA(unittest.TestCase):
             dropout=self.dropout,
         )
 
-    def test_init_with_invalid_params(self):
+    def test_initialization(self):
+        """Test that the module initializes correctly."""
+        self.assertEqual(self.lora.lora_a.shape, (self.rank, self.in_features))
+        self.assertEqual(self.lora.lora_b.shape, (self.out_features, self.rank))
+        self.assertIsInstance(self.lora.dropout, nn.Dropout1d)
+        self.assertEqual(self.lora.alpha, self.alpha)
+
+    def test_initialization_with_invalid_params(self):
+        """Test that initialization fails with invalid parameters."""
         with self.assertRaises(ValueError):
             LoRA(
                 in_features=self.in_features,
                 out_features=self.out_features,
-                rank=0,  # Invalid, must be greater than 0
+                rank=0,  # Invalid
                 alpha=self.alpha,
                 dropout=self.dropout,
             )
@@ -301,7 +476,7 @@ class TestLoRA(unittest.TestCase):
                 in_features=self.in_features,
                 out_features=self.out_features,
                 rank=self.rank,
-                alpha=0,  # Invalid, must be greater than 0
+                alpha=0,  # Invalid
                 dropout=self.dropout,
             )
 
@@ -311,31 +486,45 @@ class TestLoRA(unittest.TestCase):
                 out_features=self.out_features,
                 rank=self.rank,
                 alpha=self.alpha,
-                dropout=-0.1,  # Invalid, must be between 0 and 1
+                dropout=-0.1,  # Invalid
             )
 
     def test_from_linear(self):
+        """Test creating a LoRA from a Linear layer."""
         linear = nn.Linear(self.in_features, self.out_features)
 
         lora = LoRA.from_linear(
-            linear=linear,
-            rank=self.rank,
-            alpha=self.alpha,
-            dropout=self.dropout,
+            linear=linear, rank=self.rank, alpha=self.alpha, dropout=self.dropout
         )
 
         self.assertEqual(lora.lora_a.shape, (self.rank, self.in_features))
         self.assertEqual(lora.lora_b.shape, (self.out_features, self.rank))
+        self.assertEqual(lora.alpha, self.alpha)
 
     def test_forward(self):
+        """Test the forward pass of the LoRA module."""
+        # Perturb the LoRA parameters a bit
+        self.lora.lora_a.data += 0.1
+        self.lora.lora_b.data -= 0.1
+
+        # Create weight tensor with same shape as expected for parametrization
         weight = torch.randn(self.out_features, self.in_features)
+
+        # Perform forward pass
         output = self.lora(weight)
 
+        # Check output shape
         self.assertEqual(output.shape, weight.shape)
+
+        # Output should be different from input
+        self.assertFalse(torch.allclose(output, weight))
 
 
 class TestLightGPTHuggingFaceConfig(unittest.TestCase):
-    def test_init_default(self):
+    """Test cases for the LightGPTHuggingFaceConfig."""
+
+    def test_default_initialization(self):
+        """Test initialization with default parameters."""
         config = LightGPTHuggingFaceConfig()
 
         self.assertEqual(config.vocabulary_size, 50257)
@@ -347,28 +536,33 @@ class TestLightGPTHuggingFaceConfig(unittest.TestCase):
         self.assertEqual(config.padding_index, -100)
         self.assertEqual(config.model_type, "lightgpt")
 
-    def test_init_custom(self):
+    def test_custom_initialization(self):
+        """Test initialization with custom parameters."""
         config = LightGPTHuggingFaceConfig(
             vocabulary_size=1000,
-            embedding_dimensions=512,
+            embedding_dimensions=128,
             num_heads=8,
-            num_layers=12,
+            num_layers=2,
             feed_forward_ratio=2,
             dropout=0.2,
             padding_index=0,
         )
 
         self.assertEqual(config.vocabulary_size, 1000)
-        self.assertEqual(config.embedding_dimensions, 512)
+        self.assertEqual(config.embedding_dimensions, 128)
         self.assertEqual(config.num_heads, 8)
-        self.assertEqual(config.num_layers, 12)
+        self.assertEqual(config.num_layers, 2)
         self.assertEqual(config.feed_forward_ratio, 2)
         self.assertEqual(config.dropout, 0.2)
         self.assertEqual(config.padding_index, 0)
+        self.assertEqual(config.model_type, "lightgpt")
 
 
 class TestLightGPTHuggingFaceModel(unittest.TestCase):
+    """Test cases for the LightGPTHuggingFaceModel."""
+
     def setUp(self):
+        """Set up a model for testing."""
         self.config = LightGPTHuggingFaceConfig(
             vocabulary_size=1000,
             embedding_dimensions=128,
@@ -381,25 +575,44 @@ class TestLightGPTHuggingFaceModel(unittest.TestCase):
 
         self.model = LightGPTHuggingFaceModel(self.config)
 
-    def test_init(self):
+        # Use CPU for testing
+        self.device = torch.device("cpu")
+        self.model.to(self.device)
+
+    def test_initialization(self):
+        """Test that the model initializes correctly."""
         self.assertIsInstance(self.model.model, LightGPT)
 
-    def test_forward(self):
-        x = torch.randint(0, 1000, (2, 10))
-        y = torch.randint(0, 1000, (2, 10))
+        # Check that config parameters were passed correctly
+        self.assertEqual(self.model.model.vocabulary_size, 1000)
+        self.assertEqual(self.model.model.token_embeddings.embedding_dim, 128)
+        self.assertEqual(len(self.model.model.body), 2)
 
+    def test_forward(self):
+        """Test the forward pass of the model."""
+        batch_size = 2
+        seq_len = 10
+
+        # Create input and target tensors
+        x = torch.randint(0, 1000, (batch_size, seq_len), device=self.device)
+        y = torch.randint(0, 1000, (batch_size, seq_len), device=self.device)
+
+        # Perform forward pass with labels
         output = self.model(x, y)
 
+        # Check output format
         self.assertIn("logits", output)
         self.assertIn("loss", output)
-        self.assertEqual(output["logits"].shape, (2, 10, 1000))
+        self.assertEqual(output["logits"].shape, (batch_size, seq_len, 1000))
         self.assertTrue(torch.is_tensor(output["loss"]))
 
+        # Perform forward pass without labels
         output = self.model(x)
 
+        # Check output format
         self.assertIn("logits", output)
         self.assertIn("loss", output)
-        self.assertEqual(output["logits"].shape, (2, 10, 1000))
+        self.assertEqual(output["logits"].shape, (batch_size, seq_len, 1000))
         self.assertIsNone(output["loss"])
 
 

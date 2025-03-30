@@ -234,14 +234,7 @@ def main():
             args.checkpoint_path, map_location="cpu", weights_only=False
         )  # Always load into CPU RAM first to prevent CUDA out-of-memory errors.
 
-        state_dict = checkpoint["model"]
-
-        for key in list(state_dict.keys()):
-            state_dict[key.replace("in_proj_weight", "qkv_proj.weight")] = (
-                state_dict.pop(key)
-            )
-
-        model.load_state_dict(state_dict)
+        model.load_state_dict(checkpoint["model"])
         optimizer.load_state_dict(checkpoint["optimizer"])
         starting_epoch += checkpoint["epoch"]
 
@@ -284,6 +277,7 @@ def main():
                 scaled_loss.backward()
 
             total_cross_entropy += loss.item()
+            total_batches += 1
 
             if sync_and_step:
                 norm = clip_grad_norm_(model.parameters(), args.max_gradient_norm)
@@ -294,8 +288,6 @@ def main():
 
                 total_gradient_norm += norm.item()
                 total_steps += 1
-
-            total_batches += 1
 
         if IS_MASTER:
             average_cross_entropy = total_cross_entropy / total_batches

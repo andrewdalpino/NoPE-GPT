@@ -134,7 +134,8 @@ python instruction-tune.py --rank=4 --alpha=0.8 --dropout=0.1
 | --gradient_accumulation_steps | 128 | int | The number of batches to pass through the network before updating the weights. |
 | --learning_rate | 5e-4 | float | The learning rate of the Adafactor optimizer. |
 | --rms_decay | -0.8 | float | The decay rate of the RMS coefficient of the Adafactor optimizer. |
-| --optimizer_low_memory | False | bool | Should the optimizer reduce its memory consumption in exchange for a slightly slower runtime? |
+| --low_memory_optimizer | False | bool | Should the optimizer reduce its memory consumption in exchange for a slightly slower runtime? |
+| --max_gradient_norm | 1.0 | float | Clip gradients above this threshold norm before stepping. |
 | --rank | 8 | int | The rank of the LoRA decomposition matrices. |
 | --alpha | 1.0 | float | The strength of the LoRA signal. |
 | --dropout | 0.05 | float | The proportion of signals to send to zero during training as regularization. |
