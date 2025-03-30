@@ -234,7 +234,14 @@ def main():
             args.checkpoint_path, map_location="cpu", weights_only=False
         )  # Always load into CPU RAM first to prevent CUDA out-of-memory errors.
 
-        model.load_state_dict(checkpoint["model"])
+        state_dict = checkpoint["model"]
+
+        for key in list(state_dict.keys()):
+            state_dict[key.replace("in_proj_weight", "qkv_proj.weight")] = (
+                state_dict.pop(key)
+            )
+
+        model.load_state_dict(state_dict)
         optimizer.load_state_dict(checkpoint["optimizer"])
         starting_epoch += checkpoint["epoch"]
 
