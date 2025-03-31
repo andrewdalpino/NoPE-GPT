@@ -1,4 +1,5 @@
 import random
+from functools import partial
 
 from argparse import ArgumentParser
 
@@ -15,7 +16,7 @@ from torch.utils.tensorboard import SummaryWriter
 from torchmetrics.text import Perplexity
 
 from model import LightGPT
-from data import SmolTalk
+from data import SmolTalk, left_pad_collate
 
 from tiktoken import Encoding
 
@@ -80,6 +81,9 @@ def main():
 
     tokenizer = checkpoint["tokenizer"]
 
+    tokens = tokenizer.encode(["<|pad|>"], allowed_special="all")
+
+    padding_index = tokens[0]
     im_start_index = tokenizer.n_vocab
     im_end_index = tokenizer.n_vocab + 1
 
@@ -101,11 +105,13 @@ def main():
         train_on_inputs=args.train_on_inputs,
     )
 
-    training, testing = random_split(dataset, (0.9, 0.1))
+    _, training, testing, _ = random_split(dataset, (0.0, 0.09, 0.01, 0.9))
+
+    collate = partial(left_pad_collate, padding_index=padding_index)
 
     train_loader = DataLoader(
         training,
-        collate_fn=dataset.collate,
+        collate_fn=collate,
         batch_size=args.batch_size,
         pin_memory="cpu" not in args.device,
         shuffle=True,
@@ -113,7 +119,7 @@ def main():
     )
     test_loader = DataLoader(
         testing,
-        collate_fn=dataset.collate,
+        collate_fn=collate,
         batch_size=args.batch_size,
         pin_memory="cpu" not in args.device,
         shuffle=False,
@@ -177,7 +183,7 @@ def main():
 
     print(f"Model has {model.num_trainable_params:,} trainable parameters")
 
-    perplexity_metric = Perplexity(ignore_index=dataset.PADDING_INDEX).to(args.device)
+    perplexity_metric = Perplexity(ignore_index=model.padding_index).to(args.device)
 
     print("Instruction-tuning ...")
 

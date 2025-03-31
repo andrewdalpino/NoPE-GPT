@@ -82,6 +82,8 @@ class LightGPT(Module):
         self.vocabulary_size = vocabulary_size
         self.embedding_dimensions = embedding_dimensions
         self.num_heads = num_heads
+        self.num_layers = num_layers
+        self.padding_index = padding_index
 
     @property
     def num_trainable_params(self) -> int:
@@ -113,9 +115,9 @@ class LightGPT(Module):
                 f"Vocabulary size must be greater than 0, {vocabulary_size} given."
             )
 
-        new_embeddings = Embedding(vocabulary_size, self.embedding_dimensions).to(
-            self.token_embeddings.weight.device
-        )
+        new_embeddings = Embedding(
+            vocabulary_size, self.embedding_dimensions, padding_idx=self.padding_index
+        ).to(self.token_embeddings.weight.device)
 
         num_tokens_to_copy = min(vocabulary_size, self.token_embeddings.num_embeddings)
 
@@ -123,6 +125,7 @@ class LightGPT(Module):
             :num_tokens_to_copy, :
         ]
 
+        # Initialize new embeddings
         for i in range(num_tokens_to_copy, vocabulary_size):
             new_embeddings.weight[i] = torch.randn(self.embedding_dimensions) / sqrt(
                 self.embedding_dimensions
@@ -209,13 +212,12 @@ class LightGPT(Module):
 
         z = self.token_embeddings(x)
 
-        for i, layer in enumerate(self.body):
-            z = layer.predict(z, kv_caches[i])
-
-        z = self.output_norm(z)
+        for layer, kv_cache in zip(self.body, kv_caches):
+            z = layer.predict(z, kv_cache)
 
         z = z[:, -1, :]  # Pluck only the last token embedding from each batch.
 
+        z = self.output_norm(z)
         z = self.output_layer(z)
 
         return z
@@ -264,7 +266,7 @@ class LightGPT(Module):
                 self.num_heads,
                 context_length,
             ).to(prompt.device)
-            for _ in range(len(self.body))
+            for _ in range(self.num_layers)
         ]
 
         prompt = prompt[-context_length:]
@@ -371,21 +373,11 @@ class DecoderBlock(Module):
     ):
         super().__init__()
 
-        if embedding_dimensions <= 0:
-            raise ValueError(
-                f"Embedding dimensions must be greater than 0, {embedding_dimensions} given."
-            )
-
-        if feed_forward_ratio not in {1, 2, 4}:
-            raise ValueError("Feed-forward ratio must be either 1, 2, or 4.")
-
         self.norm1 = RMSNorm(embedding_dimensions)
         self.attention = SelfAttention(embedding_dimensions, num_heads, dropout)
 
-        hidden_dimensions = feed_forward_ratio * embedding_dimensions
-
         self.norm2 = RMSNorm(embedding_dimensions)
-        self.mlp = MLP(embedding_dimensions, hidden_dimensions, dropout)
+        self.mlp = MLP(embedding_dimensions, feed_forward_ratio, dropout)
 
     def forward(self, x: Tensor) -> Tensor:
         z = self.norm1(x)
@@ -426,6 +418,11 @@ class SelfAttention(Module):
 
     def __init__(self, embedding_dimensions: int, num_heads: int, dropout: float):
         super().__init__()
+
+        if embedding_dimensions <= 0:
+            raise ValueError(
+                f"Embedding dimensions must be greater than 0, {embedding_dimensions} given."
+            )
 
         if num_heads <= 0:
             raise ValueError(f"Num heads must be greater than 0, {num_heads} given.")
@@ -493,6 +490,7 @@ class SelfAttention(Module):
             k,
             v,
             scale=self.scale,
+            dropout_p=0.0,
             is_causal=t > 1,
         )
 
@@ -507,19 +505,14 @@ class MLP(Module):
     """A two layer fully-connected network with dropout."""
 
     def __init__(
-        self, embedding_dimensions: int, hidden_dimensions: int, dropout: float
+        self, embedding_dimensions: int, feed_forward_ratio: int, dropout: float
     ):
         super().__init__()
 
-        if embedding_dimensions <= 0:
-            raise ValueError(
-                f"Embedding dimensions must be greater than 0, {embedding_dimensions} given."
-            )
+        if feed_forward_ratio not in {1, 2, 4}:
+            raise ValueError("Feed-forward ratio must be either 1, 2, or 4.")
 
-        if hidden_dimensions <= 0:
-            raise ValueError(
-                f"Hidden dimensions must be greater than 0, {hidden_dimensions} given."
-            )
+        hidden_dimensions = feed_forward_ratio * embedding_dimensions
 
         self.layers = Sequential(
             Linear(embedding_dimensions, hidden_dimensions, bias=False),

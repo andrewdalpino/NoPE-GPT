@@ -5,7 +5,7 @@ from torch.nn import Module, Buffer
 
 
 class KVCache(Module):
-    """Key-value cache for optimizing inference-time self-attention mechanism."""
+    """A Key-value cache for optimizing inference-time self-attention mechanism."""
 
     def __init__(
         self,

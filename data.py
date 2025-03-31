@@ -28,8 +28,6 @@ class Fineweb(IterableDataset):
 
     SUBSETS = {"sample-10BT", "sample-100BT", "sample-350BT"}
 
-    PADDING_INDEX = -100
-
     def __init__(
         self,
         tokenizer: Encoding,
@@ -174,8 +172,6 @@ class SmolTalk(Dataset):
         "systemchats-30k",
     }
 
-    PADDING_INDEX = -100
-
     PROMPT_TEMPLATE = "<|im_start|>{role}\n{message}\n<|im_end|>\n"
 
     def __init__(
@@ -202,32 +198,6 @@ class SmolTalk(Dataset):
         self.max_tokens_per_sample = max_tokens_per_sample
         self.train_on_inputs = train_on_inputs
 
-    def collate(self, batch: list) -> tuple[Tensor, Tensor]:
-        """Custom collate function adds left padding to batched samples."""
-
-        sample, labels = [], []
-
-        for x, y in batch:
-            sample.append(x)
-            labels.append(y)
-
-        x = pad_sequence(
-            sample,
-            batch_first=True,
-            padding_value=self.PADDING_INDEX,
-            padding_side="left",
-        )
-        y = pad_sequence(
-            labels,
-            batch_first=True,
-            padding_value=self.PADDING_INDEX,
-            padding_side="left",
-        )
-
-        assert x.shape == y.shape, "Sample / label batch shape mismatch."
-
-        return x, y
-
     def __getitem__(self, index: int):
         row = self.dataset[index]
 
@@ -248,7 +218,7 @@ class SmolTalk(Dataset):
 
             samples.extend(tokens[:-1])
 
-            if self.train_on_inputs:
+            if self.train_on_inputs or message["role"] == "assistant":
                 labels.extend(tokens[1:])
             else:
                 labels.extend([self.PADDING_INDEX] * (len(tokens) - 1))
@@ -262,3 +232,29 @@ class SmolTalk(Dataset):
 
     def __len__(self):
         return len(self.dataset)
+
+
+def left_pad_collate(batch: list, padding_index: int) -> tuple[Tensor, Tensor]:
+    """Custom collate function adds left padding to batched sample/label pairs."""
+
+    max_sequence_len = max([len(samples) for samples, _ in batch])
+
+    x, y = [], []
+
+    for samples, labels in batch:
+        pad_length = max_sequence_len - len(samples)
+
+        padding = torch.tensor([padding_index] * pad_length, dtype=torch.int64)
+
+        padded_samples = torch.cat((padding, samples))
+        padded_labels = torch.cat((padding, labels))
+
+        x.append(padded_samples)
+        y.append(padded_labels)
+
+    x = torch.stack(x)
+    y = torch.stack(y)
+
+    assert x.shape == y.shape, "Sample / label shape mismatch."
+
+    return x, y

@@ -23,6 +23,8 @@ from torchmetrics.text import Perplexity
 
 import tiktoken
 
+from tiktoken import Encoding
+
 from data import Fineweb
 from model import LightGPT
 
@@ -58,7 +60,7 @@ def main():
     parser.add_argument("--gradient_accumulation_steps", default=128, type=int)
     parser.add_argument("--tokens_per_sample", default=1024, type=int)
     parser.add_argument("--samples_per_epoch", default=4096, type=int)
-    parser.add_argument("--num_epochs", default=1690, type=int)
+    parser.add_argument("--num_epochs", default=4768, type=int)
     parser.add_argument("--learning_rate", default=1e-2, type=float)
     parser.add_argument("--rms_decay", default=-0.8, type=float)
     parser.add_argument("--low_memory_optimizer", action="store_true")
@@ -163,6 +165,18 @@ def main():
 
     tokenizer = tiktoken.get_encoding(args.token_encoding)
 
+    padding_index = tokenizer.n_vocab
+
+    tokenizer = Encoding(
+        name=tokenizer.name,
+        pat_str=tokenizer._pat_str,
+        mergeable_ranks=tokenizer._mergeable_ranks,
+        special_tokens={
+            **tokenizer._special_tokens,
+            "<|pad|>": padding_index,
+        },
+    )
+
     new_dataset = partial(
         Fineweb,
         root_path=args.dataset_path,
@@ -183,13 +197,13 @@ def main():
     )
 
     model_args = {
-        "vocabulary_size": tokenizer.n_vocab,
+        "vocabulary_size": tokenizer.n_vocab - 1,
         "embedding_dimensions": args.embedding_dimensions,
         "num_heads": args.num_attention_heads,
         "num_layers": args.num_hidden_layers,
         "feed_forward_ratio": args.feed_forward_ratio,
         "dropout": args.dropout,
-        "padding_index": training.PADDING_INDEX,
+        "padding_index": padding_index,
     }
 
     model = LightGPT(**model_args)
@@ -240,11 +254,13 @@ def main():
 
         print("Previous checkpoint resumed successfully")
 
+    model.resize_token_embeddings(tokenizer.n_vocab)
+
     model.train()
 
     print(f"Model has {model.num_trainable_params:,} trainable parameters")
 
-    perplexity_metric = Perplexity(ignore_index=training.PADDING_INDEX).to(args.device)
+    perplexity_metric = Perplexity(ignore_index=padding_index).to(args.device)
 
     register_signal_handlers()
 

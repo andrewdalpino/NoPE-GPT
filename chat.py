@@ -11,11 +11,15 @@ from model import LightGPT
 from data import SmolTalk
 from memory import ChatMemory
 
+DEFAULT_SYSTEM_MESSAGE = (
+    "You're a helpful AI assistant named LightGPT."
+    "Your job is to answer the user's queries as accurately as possible."
+    "If you are unsure of an answer, say 'I don't know'."
+)
+
 
 def main():
-    parser = ArgumentParser(
-        description="Chat with the instruction-tuned model.",
-    )
+    parser = ArgumentParser(description="Chat with the instruction-tuned model.")
 
     parser.add_argument(
         "--checkpoint_path", default="./checkpoints/checkpoint.pt", type=str
@@ -78,7 +82,7 @@ def main():
     system_message = input("Enter a system message: ")
 
     if not system_message:
-        system_message = "You're a helpful AI assistant named LightGPT. Your job is to answer the user's queries."
+        system_message = DEFAULT_SYSTEM_MESSAGE
 
     system_message = SmolTalk.PROMPT_TEMPLATE.format(
         role="system", message=system_message
