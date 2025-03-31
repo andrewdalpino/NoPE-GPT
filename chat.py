@@ -21,7 +21,7 @@ def main():
         "--checkpoint_path", default="./checkpoints/checkpoint.pt", type=str
     )
     parser.add_argument("--lora_path", default="./checkpoints/instruct.pt", type=str)
-    parser.add_argument("--max_tokens", default=500, type=int)
+    parser.add_argument("--max_tokens", default=2000, type=int)
     parser.add_argument("--context_length", default=1024, type=int)
     parser.add_argument("--temperature", default=1.0, type=float)
     parser.add_argument("--top_k", default=500, type=int)

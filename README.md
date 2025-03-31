@@ -164,7 +164,7 @@ Then navigate to the dashboard using your favorite web browser.
 After pre-training, you can generate text from the model by running the `generate.py` script from the commandline. This inference script samples tokens from the model one at a time conditioned on a prompt and any previously generated tokens, together referred to as the context window. In the example below we are choosing to only sample from the `top_k` predicted tokens that have at least `top_p` cumulative probability mass when ordered descending by predicted probability.
 
 ```
-python generate.py --top_k=500 --top_p=0.9
+python generate.py --temperature=0.4 --top_k=500 --top_p=0.9
 ```
 
 ### Generation Arguments
@@ -172,29 +172,11 @@ python generate.py --top_k=500 --top_p=0.9
 | Argument | Default | Type | Description |
 |---|---|---|---|
 | --checkpoint_path | "./checkpoints/checkpoint.pt" | string | The path to the base checkpoint file on disk. |
-| --max_tokens | 1000 | int | The maximum number of tokens that the model should generate per sample. |
+| --max_tokens | 2000 | int | The maximum number of tokens that the model should generate per sample. |
 | --context_length | 1024 | int | The number of tokens to keep within the context window of the current prediction. |
 | --temperature | 1.0 | float | The amount of regularization applied to the candidate token probabilities. |
 | --top_k | 500 | int | Only sample from this many candidate tokens with the highest probabilities. |
 | --top_p | 0.9 | float | Of the `top_k` tokens, drop all but the `top_p` portion of the cumulative probability distribution. |
-| --device | "cuda" | string | The device to run the computation on. |
-| --seed | None | int | The seed for the random number generator. |
-
-We also provide a script that samples entire sequences rather than single tokens independently which we call `beam_search.py`. Beam search maintains a list of the top `beam_width` candidate sequences and outputs the top `num_candidates` completed sequences with the highest overall priority. It is a form of greedy search that works well for some things like text summarization and translation but often results in less natural sounding responses and may even repeat certain sequences.
-
-```
-python beam_search.py --beam_width=16 --num_candidates=3
-```
-
-### Beam Search Arguments
-
-| Argument | Default | Type | Description |
-|---|---|---|---|
-| --checkpoint_path | "./checkpoints/checkpoint.pt" | string | The path to the base checkpoint file on disk. ||
-| --max_tokens | 100 | int | The maximum number of tokens that the model should generate per sample. |
-| --context_length | 1024 | int | The number of tokens to keep within the context window of the current prediction. |
-| --num_candidates | 3 | int | The number of candidate sequences to output. |
-| --beam_width | 16 | int | The number of candidate sequences to keep track of during search. |
 | --device | "cuda" | string | The device to run the computation on. |
 | --seed | None | int | The seed for the random number generator. |
 
@@ -218,7 +200,7 @@ python chat.py --temperature=0.8 --top_k=300
 |---|---|---|---|
 | --checkpoint_path | "./checkpoints/checkpoint.pt" | string | The path to the base checkpoint file on disk. |
 | --lora_path | None | string | The path to the LoRA checkpoint. |
-| --max_tokens | 500 | int | The maximum number of tokens that the model should generate per sample. |
+| --max_tokens | 2000 | int | The maximum number of tokens that the model should generate per sample. |
 | --context_length | 1024 | int | The number of tokens to keep within the context window of the current prediction. |
 | --temperature | 1.0 | float | The amount of regularization applied to the candidate token probabilities. |
 | --top_k | 500 | int | Only sample from this many candidate tokens with the highest probabilities. |

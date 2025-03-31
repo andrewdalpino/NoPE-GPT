@@ -6,7 +6,7 @@ from typing import Iterator
 
 
 class ChatMemory:
-    """A simple short-term memory store for an interactive chat session."""
+    """A simple in-memory short-term memory store for interactive chat sessions."""
 
     def __init__(self, max_length: int):
         self.messages = deque()

@@ -17,6 +17,7 @@ from torch.nn import (
     Dropout1d,
     CrossEntropyLoss,
     Parameter,
+    Buffer,
 )
 
 from torch.nn.functional import softmax, log_softmax, scaled_dot_product_attention
@@ -24,6 +25,8 @@ from torch.nn.utils.parametrize import register_parametrization, remove_parametr
 from torch.utils.checkpoint import checkpoint as torch_checkpoint
 
 from transformers import PretrainedConfig, PreTrainedModel
+
+from caching import KVCache
 
 
 class LightGPT(Module):
@@ -80,6 +83,7 @@ class LightGPT(Module):
 
         self.vocabulary_size = vocabulary_size
         self.embedding_dimensions = embedding_dimensions
+        self.num_heads = num_heads
 
     @property
     def num_trainable_params(self) -> int:
@@ -202,13 +206,13 @@ class LightGPT(Module):
         return z, loss
 
     @torch.no_grad()
-    def predict(self, x: Tensor) -> Tensor:
-        """A forward pass optimized for batch next-token prediction."""
+    def predict(self, x: Tensor, kv_caches: list[KVCache]) -> Tensor:
+        """A forward pass optimized for next-token prediction."""
 
         z = self.token_embeddings(x)
 
-        for layer in self.body:
-            z = layer(z)
+        for i, layer in enumerate(self.body):
+            z = layer.predict(z, kv_caches[i])
 
         z = self.output_norm(z)
 
@@ -255,12 +259,20 @@ class LightGPT(Module):
         if top_p <= 0.0 or top_p > 1.0:
             raise ValueError(f"Top p must be between 0 and 1, {top_p} given.")
 
-        context_window = prompt
+        kv_caches = [
+            KVCache(
+                1,
+                self.embedding_dimensions,
+                self.num_heads,
+                context_length,
+            ).to(prompt.device)
+            for _ in range(len(self.body))
+        ]
+
+        prompt = prompt[-context_length:]
 
         for _ in range(max_tokens):
-            context_window = context_window[-context_length:]
-
-            logits = self.predict(context_window.unsqueeze(0)).squeeze()
+            logits = self.predict(prompt.unsqueeze(0), kv_caches).squeeze()
 
             logits, indices = torch.topk(logits, top_k, sorted=True)
 
@@ -290,124 +302,7 @@ class LightGPT(Module):
 
             yield next_token
 
-            context_window = torch.cat((context_window, next_token.unsqueeze(0)))
-
-    @torch.no_grad()
-    def beam_search(
-        self,
-        prompt: Tensor,
-        max_tokens: int = 100,
-        context_length: int = 1024,
-        num_candidates: int = 3,
-        beam_width: int = 16,
-        length_penalty: float = 1.0,
-        eos_indices: set = set(),
-    ) -> list:
-        """
-        Given a prompt, return the {num_candidates} highest probability sequences. Note that
-        this method is often best for generating shorter sequences and is typically less
-        natural sounding than sequences that are more random in nature.
-        """
-
-        if max_tokens <= 0:
-            raise ValueError(f"Max tokens must be greater than 0, {max_tokens} given.")
-
-        if context_length <= 0:
-            raise ValueError(
-                f"Context length must be greater than 0, {context_length} given."
-            )
-
-        if num_candidates <= 0:
-            raise ValueError(
-                f"Num candidates must be greater than 0, {num_candidates} given."
-            )
-
-        if beam_width <= 0:
-            raise ValueError(f"Beam width must be greater than 0, {beam_width} given.")
-
-        if length_penalty <= 0:
-            raise ValueError(
-                f"Length penalty must be greater than 0, {length_penalty} given."
-            )
-
-        @dataclass
-        class Candidate:
-            cumulative_log_probability: float
-            tokens: Tensor
-
-            def priority(self) -> float:
-                return (
-                    self.cumulative_log_probability / len(self.tokens) ** length_penalty
-                )
-
-        sort_candidates = partial(
-            sorted,
-            key=lambda candidate: candidate.priority(),
-            reverse=True,
-        )
-
-        candidates: list[Candidate] = []
-        completed: list[Candidate] = []
-
-        tokens = torch.tensor([], dtype=prompt.dtype).to(prompt.device)
-
-        candidates.append(Candidate(0.0, tokens))
-
-        while len(candidates) > 0:
-            candidate = candidates.pop()
-
-            if len(completed) >= num_candidates:
-                completed = sort_candidates(completed)
-
-                completed = completed[:num_candidates]
-
-                worst_candidate = completed[-1]
-
-                if (
-                    candidate.cumulative_log_probability
-                    < worst_candidate.cumulative_log_probability
-                ):
-                    break
-
-            if len(candidate.tokens) > 0:
-                last_token = candidate.tokens[-1]
-
-                if last_token.item() in eos_indices:
-                    candidate.tokens = candidate.tokens[:-1]
-
-                    completed.append(candidate)
-
-                    continue
-
-            if len(candidate.tokens) >= max_tokens:
-                completed.append(candidate)
-
-                continue
-
-            context_window = torch.cat((prompt, candidate.tokens))
-
-            context_window = context_window[-context_length:]
-
-            logits = self.predict(context_window.unsqueeze(0)).squeeze()
-
-            logits, indices = torch.topk(logits, beam_width, sorted=False)
-
-            log_probabilities = log_softmax(logits, dim=0)
-
-            for log_probability, index in zip(log_probabilities, indices):
-                cumulative_log_probability = (
-                    candidate.cumulative_log_probability + log_probability
-                )
-
-                tokens = torch.cat((candidate.tokens, index.unsqueeze(0)))
-
-                candidates.append(Candidate(cumulative_log_probability, tokens))
-
-            candidates = sort_candidates(candidates)
-
-            candidates = candidates[:beam_width]
-
-        return completed
+            prompt = next_token.unsqueeze(0)
 
 
 class LightGPTHuggingFaceConfig(PretrainedConfig):
@@ -509,6 +404,24 @@ class DecoderBlock(Module):
 
         return z
 
+    @torch.no_grad()
+    def predict(self, x: Tensor, kv_cache: KVCache) -> Tensor:
+        """A forward pass optimized for next-token prediction."""
+
+        z = self.norm1(x)
+        z = self.attention.predict(z, kv_cache)
+
+        z = x + z  # Residual connection
+
+        x = z
+
+        z = self.norm2(x)
+        z = self.mlp.predict(z)
+
+        z = x + z  # Residual connection
+
+        return z
+
 
 class SelfAttention(Module):
     """Multihead self-attention with causal masking."""
@@ -563,6 +476,34 @@ class SelfAttention(Module):
 
         return z
 
+    @torch.no_grad()
+    def predict(self, x: Tensor, kv_cache: KVCache) -> Tensor:
+        """A forward pass optimized for next-token prediction."""
+
+        b, t, d = x.size()
+
+        q, k, v = self.qkv_proj(x).split(self.embedding_dimensions, dim=-1)
+
+        q = q.view(b, t, self.num_heads, self.head_dimensions).transpose(1, 2)
+        k = k.view(b, t, self.num_heads, self.head_dimensions).transpose(1, 2)
+        v = v.view(b, t, self.num_heads, self.head_dimensions).transpose(1, 2)
+
+        k, v = kv_cache.update(k, v)
+
+        z = scaled_dot_product_attention(
+            q,
+            k,
+            v,
+            scale=self.scale,
+            is_causal=t > 1,
+        )
+
+        z = z.transpose(1, 2).contiguous().view(b, t, d)
+
+        z = self.out_proj(z)
+
+        return z
+
 
 class MLP(Module):
     """A two layer fully-connected network with dropout."""
@@ -592,6 +533,9 @@ class MLP(Module):
 
     def forward(self, x: Tensor) -> Tensor:
         return self.dropout(self.layers(x))
+
+    def predict(self, x: Tensor) -> Tensor:
+        return self.layers(x)
 
 
 class LoRA(Module):

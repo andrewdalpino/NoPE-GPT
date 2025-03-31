@@ -110,7 +110,7 @@ class Fineweb(IterableDataset):
 
         tokens_per_epoch = samples_per_epoch * (tokens_per_sample + 1)
 
-        start = tokens_per_epoch if split == "train" else 0
+        start = 4 * tokens_per_epoch if split == "train" else 0
         end = len(memmap) if split == "train" else tokens_per_epoch
 
         max_offset = end - tokens_per_epoch

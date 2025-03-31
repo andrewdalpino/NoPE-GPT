@@ -13,6 +13,8 @@ from model import (
     LightGPTHuggingFaceModel,
 )
 
+from caching import KVCache
+
 
 class TestLightGPT(unittest.TestCase):
     """Test cases for the LightGPT model."""
@@ -106,8 +108,10 @@ class TestLightGPT(unittest.TestCase):
         # Create input tensor
         x = torch.randint(0, 1000, (batch_size, seq_len), device=self.device)
 
+        kv_caches = [KVCache(2, 128, 8, 20).to(x.device) for _ in range(2)]
+
         # Get predictions
-        logits = self.model.predict(x)
+        logits = self.model.predict(x, kv_caches)
 
         # Check output shape (should be [batch_size, vocab_size])
         self.assertEqual(logits.shape, (batch_size, 1000))
@@ -160,51 +164,6 @@ class TestLightGPT(unittest.TestCase):
 
         with self.assertRaises(ValueError):
             next(self.model.generate(prompt, top_p=0))
-
-    def test_beam_search(self):
-        """Test the beam search method."""
-        seq_len = 10
-
-        # Create prompt tensor
-        prompt = torch.randint(0, 1000, (seq_len,), device=self.device)
-
-        # Set up beam search parameters
-        max_tokens = 5
-        num_candidates = 2
-
-        # Perform beam search
-        candidates = self.model.beam_search(
-            prompt=prompt, max_tokens=max_tokens, num_candidates=num_candidates
-        )
-
-        # Check number of candidates
-        self.assertLessEqual(len(candidates), num_candidates)
-
-        # Check candidate properties
-        for candidate in candidates:
-            self.assertTrue(hasattr(candidate, "tokens"))
-            self.assertTrue(hasattr(candidate, "cumulative_log_probability"))
-            self.assertLessEqual(len(candidate.tokens), max_tokens)
-
-    def test_beam_search_with_invalid_params(self):
-        """Test that beam search fails with invalid parameters."""
-        seq_len = 10
-        prompt = torch.randint(0, 1000, (seq_len,), device=self.device)
-
-        with self.assertRaises(ValueError):
-            self.model.beam_search(prompt, max_tokens=0)
-
-        with self.assertRaises(ValueError):
-            self.model.beam_search(prompt, context_length=0)
-
-        with self.assertRaises(ValueError):
-            self.model.beam_search(prompt, num_candidates=0)
-
-        with self.assertRaises(ValueError):
-            self.model.beam_search(prompt, beam_width=0)
-
-        with self.assertRaises(ValueError):
-            self.model.beam_search(prompt, length_penalty=0)
 
     def test_num_trainable_params(self):
         """Test the num_trainable_params property."""
