@@ -1,5 +1,4 @@
 from math import sqrt
-from dataclasses import dataclass
 from functools import partial
 from typing import Iterator, Self
 
@@ -17,10 +16,9 @@ from torch.nn import (
     Dropout1d,
     CrossEntropyLoss,
     Parameter,
-    Buffer,
 )
 
-from torch.nn.functional import softmax, log_softmax, scaled_dot_product_attention
+from torch.nn.functional import softmax, scaled_dot_product_attention
 from torch.nn.utils.parametrize import register_parametrization, remove_parametrizations
 from torch.utils.checkpoint import checkpoint as torch_checkpoint
 
