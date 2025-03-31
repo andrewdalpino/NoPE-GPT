@@ -197,7 +197,7 @@ def main():
     )
 
     model_args = {
-        "vocabulary_size": tokenizer.n_vocab - 1,
+        "vocabulary_size": tokenizer.n_vocab,
         "embedding_dimensions": args.embedding_dimensions,
         "num_heads": args.num_attention_heads,
         "num_layers": args.num_hidden_layers,
@@ -253,8 +253,6 @@ def main():
         model = model.to(args.device)
 
         print("Previous checkpoint resumed successfully")
-
-    model.resize_token_embeddings(tokenizer.n_vocab)
 
     model.train()
 

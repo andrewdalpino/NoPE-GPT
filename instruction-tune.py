@@ -81,7 +81,8 @@ def main():
 
     tokenizer = checkpoint["tokenizer"]
 
-    tokens = tokenizer.encode(["<|pad|>"], allowed_special="all")
+    # Compensate for poorly designed tiktoken API by encoding padding token to get its index.
+    tokens = tokenizer.encode("<|pad|>", allowed_special="all")
 
     padding_index = tokens[0]
     im_start_index = tokenizer.n_vocab
@@ -183,7 +184,7 @@ def main():
 
     print(f"Model has {model.num_trainable_params:,} trainable parameters")
 
-    perplexity_metric = Perplexity(ignore_index=model.padding_index).to(args.device)
+    perplexity_metric = Perplexity(ignore_index=padding_index).to(args.device)
 
     print("Instruction-tuning ...")
 
