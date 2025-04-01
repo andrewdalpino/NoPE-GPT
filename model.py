@@ -38,7 +38,6 @@ class LightGPT(Module):
         num_layers: int,
         feed_forward_ratio: int,
         dropout: float,
-        padding_index: int,
     ):
         super().__init__()
 
@@ -50,9 +49,7 @@ class LightGPT(Module):
         if num_layers <= 0:
             raise ValueError(f"Num layers must be greater than 0, {num_layers} given.")
 
-        token_embeddings = Embedding(
-            vocabulary_size, embedding_dimensions, padding_idx=padding_index
-        )
+        token_embeddings = Embedding(vocabulary_size, embedding_dimensions)
 
         output_layer = Linear(embedding_dimensions, vocabulary_size, bias=False)
 
@@ -77,13 +74,12 @@ class LightGPT(Module):
         self.output_norm = RMSNorm(embedding_dimensions)
         self.output_layer = output_layer
 
-        self.loss_function = CrossEntropyLoss(ignore_index=padding_index)
+        self.loss_function = CrossEntropyLoss()
 
         self.vocabulary_size = vocabulary_size
         self.embedding_dimensions = embedding_dimensions
         self.num_heads = num_heads
         self.num_layers = num_layers
-        self.padding_index = padding_index
 
     @property
     def num_trainable_params(self) -> int:
@@ -106,6 +102,15 @@ class LightGPT(Module):
         for param in self.token_embeddings.parameters():
             param.requires_grad = True
 
+    def set_padding_token_index(self, padding_index: int) -> None:
+        if padding_index < 0:
+            raise ValueError(
+                f"Padding index must be greater than or equal to 0, {padding_index} given."
+            )
+
+        self.token_embeddings.padding_idx = padding_index
+        self.loss_function.ignore_index = padding_index
+
     @torch.no_grad()
     def resize_token_embeddings(self, vocabulary_size: int) -> None:
         """Resize the token embeddings to accommodate a new vocabulary size."""
@@ -116,7 +121,7 @@ class LightGPT(Module):
             )
 
         new_embeddings = Embedding(
-            vocabulary_size, self.embedding_dimensions, padding_idx=self.padding_index
+            vocabulary_size, self.embedding_dimensions,
         ).to(self.token_embeddings.weight.device)
 
         num_tokens_to_copy = min(vocabulary_size, self.token_embeddings.num_embeddings)
@@ -318,7 +323,6 @@ class LightGPTHuggingFaceConfig(PretrainedConfig):
         num_layers: int = 24,
         feed_forward_ratio: int = 4,
         dropout: float = 0.1,
-        padding_index: int = -100,
         **kwargs,
     ):
         self.vocabulary_size = vocabulary_size
@@ -327,7 +331,6 @@ class LightGPTHuggingFaceConfig(PretrainedConfig):
         self.num_layers = num_layers
         self.feed_forward_ratio = feed_forward_ratio
         self.dropout = dropout
-        self.padding_index = padding_index
 
         super().__init__(**kwargs)
 
@@ -347,7 +350,6 @@ class LightGPTHuggingFaceModel(PreTrainedModel):
             config.num_layers,
             config.feed_forward_ratio,
             config.dropout,
-            config.padding_index,
         )
 
     def forward(

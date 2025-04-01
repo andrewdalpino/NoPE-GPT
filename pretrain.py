@@ -165,18 +165,6 @@ def main():
 
     tokenizer = tiktoken.get_encoding(args.token_encoding)
 
-    padding_index = tokenizer.n_vocab
-
-    tokenizer = Encoding(
-        name=tokenizer.name,
-        pat_str=tokenizer._pat_str,
-        mergeable_ranks=tokenizer._mergeable_ranks,
-        special_tokens={
-            **tokenizer._special_tokens,
-            "<|pad|>": padding_index,
-        },
-    )
-
     new_dataset = partial(
         Fineweb,
         root_path=args.dataset_path,
@@ -203,7 +191,6 @@ def main():
         "num_layers": args.num_hidden_layers,
         "feed_forward_ratio": args.feed_forward_ratio,
         "dropout": args.dropout,
-        "padding_index": padding_index,
     }
 
     model = LightGPT(**model_args)
@@ -258,7 +245,7 @@ def main():
 
     print(f"Model has {model.num_trainable_params:,} trainable parameters")
 
-    perplexity_metric = Perplexity(ignore_index=padding_index).to(args.device)
+    perplexity_metric = Perplexity().to(args.device)
 
     register_signal_handlers()
 

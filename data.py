@@ -180,6 +180,7 @@ class SmolTalk(Dataset):
         subset: str = "all",
         max_tokens_per_sample: int = 1024,
         train_on_inputs: bool = False,
+        padding_index: int = -100,
     ):
         super().__init__()
 
@@ -197,6 +198,7 @@ class SmolTalk(Dataset):
 
         self.max_tokens_per_sample = max_tokens_per_sample
         self.train_on_inputs = train_on_inputs
+        self.padding_index = padding_index
 
     def __getitem__(self, index: int):
         row = self.dataset[index]
@@ -221,7 +223,7 @@ class SmolTalk(Dataset):
             if self.train_on_inputs or message["role"] == "assistant":
                 labels.extend(tokens[1:])
             else:
-                labels.extend([self.PADDING_INDEX] * (len(tokens) - 1))
+                labels.extend([self.padding_index] * (len(tokens) - 1))
 
         x = torch.tensor(samples, dtype=torch.int64)
         y = torch.tensor(labels, dtype=torch.int64)

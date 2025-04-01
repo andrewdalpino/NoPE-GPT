@@ -81,12 +81,9 @@ def main():
 
     tokenizer = checkpoint["tokenizer"]
 
-    # Compensate for poorly designed tiktoken API by encoding padding token to get its index.
-    tokens = tokenizer.encode("<|pad|>", allowed_special="all")
-
-    padding_index = tokens[0]
-    im_start_index = tokenizer.n_vocab
-    im_end_index = tokenizer.n_vocab + 1
+    padding_index = tokenizer.n_vocab
+    im_start_index = tokenizer.n_vocab + 1
+    im_end_index = tokenizer.n_vocab + 2
 
     tokenizer = Encoding(
         name=tokenizer.name,
@@ -94,6 +91,7 @@ def main():
         mergeable_ranks=tokenizer._mergeable_ranks,
         special_tokens={
             **tokenizer._special_tokens,
+            "<|pad|>": padding_index,
             "<|im_start|>": im_start_index,
             "<|im_end|>": im_end_index,
         },
@@ -104,6 +102,7 @@ def main():
         subset=args.dataset_subset,
         max_tokens_per_sample=args.max_tokens_per_sample,
         train_on_inputs=args.train_on_inputs,
+        padding_index=padding_index,
     )
 
     _, training, testing, _ = random_split(dataset, (0.0, 0.09, 0.01, 0.9))
@@ -136,7 +135,7 @@ def main():
 
     state_dict = checkpoint["model"]
 
-    # Compensate for poorly implemented compiled state dicts.
+    # Compensate for poorly designed compiled state dicts.
     for key in list(state_dict.keys()):
         state_dict[key.replace("_orig_mod.", "")] = state_dict.pop(key)
 
@@ -152,6 +151,7 @@ def main():
 
     model.freeze_model_parameters()
     model.resize_token_embeddings(tokenizer.n_vocab)
+    model.set_padding_token_index(padding_index)
     model.unfreeze_token_embeddings()
     model.add_lora_parameters(**lora_args)
 
