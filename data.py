@@ -18,6 +18,9 @@ from torch.nn.utils.rnn import pad_sequence
 from tqdm import tqdm
 
 
+CHATML_PROMPT_TEMPLATE = "<|im_start|>{role}\n{message}\n<|im_end|>\n"
+
+
 class Fineweb(IterableDataset):
     """
     The Fineweb dataset by HuggingFace, tokenized and stored as a memory map for fast
@@ -149,8 +152,7 @@ class Fineweb(IterableDataset):
 
 class SmolTalk(Dataset):
     """
-    The SmolTalk dataset by HuggingFace formatted as ChatML messages with masked
-    system and user prompts.
+    The SmolTalk dataset by HuggingFace formatted as ChatML messages for instruction tuning.
     """
 
     DATASET_NAME = "HuggingFaceTB/smoltalk"
@@ -171,8 +173,6 @@ class SmolTalk(Dataset):
         "smol-summarize",
         "systemchats-30k",
     }
-
-    PROMPT_TEMPLATE = "<|im_start|>{role}\n{message}\n<|im_end|>\n"
 
     def __init__(
         self,
@@ -206,7 +206,7 @@ class SmolTalk(Dataset):
         samples, labels = [], []
 
         for message in row["messages"]:
-            text = self.PROMPT_TEMPLATE.format(
+            text = CHATML_PROMPT_TEMPLATE.format(
                 role=message["role"],
                 message=message["content"],
             )
@@ -220,7 +220,79 @@ class SmolTalk(Dataset):
 
             samples.extend(tokens[:-1])
 
-            if self.train_on_inputs or message["role"] == "assistant":
+            if message["role"] == "assistant" or self.train_on_inputs:
+                labels.extend(tokens[1:])
+            else:
+                labels.extend([self.padding_index] * (len(tokens) - 1))
+
+        x = torch.tensor(samples, dtype=torch.int64)
+        y = torch.tensor(labels, dtype=torch.int64)
+
+        assert x.shape == y.shape, "Sample / label shape mismatch."
+
+        return x, y
+
+    def __len__(self):
+        return len(self.dataset)
+
+
+class UltraFeedback(Dataset):
+    """
+    The binarized version of the UltraFeedback dataset for human preference alignment via SFT.
+    """
+
+    DATASET_NAME = "HuggingFaceH4/ultrafeedback_binarized"
+
+    def __init__(
+        self,
+        tokenizer: Encoding,
+        split: str = "train",
+        max_tokens_per_sample: int = 1024,
+        train_on_inputs: bool = False,
+        padding_index: int = -100,
+    ):
+        super().__init__()
+
+        if split not in {"train", "test"}:
+            raise ValueError(f"Split must be either train or test, {split} given.")
+
+        if max_tokens_per_sample < 1:
+            raise ValueError(
+                f"Max tokens per sample must be greater than 0, {max_tokens_per_sample} given."
+            )
+
+        self.tokenizer = tokenizer
+
+        if split == "train":
+            self.dataset = load_dataset(self.DATASET_NAME, split="train_sft")
+        else:
+            self.dataset = load_dataset(self.DATASET_NAME, split="test_sft")
+
+        self.max_tokens_per_sample = max_tokens_per_sample
+        self.train_on_inputs = train_on_inputs
+        self.padding_index = padding_index
+
+    def __getitem__(self, index: int):
+        row = self.dataset[index]
+
+        samples, labels = [], []
+
+        for message in row["messages"]:
+            text = CHATML_PROMPT_TEMPLATE.format(
+                role=message["role"],
+                message=message["content"],
+            )
+
+            tokens = self.tokenizer.encode(text, allowed_special="all")
+
+            tokens.append(self.tokenizer.eot_token)
+
+            if len(tokens) > self.max_tokens_per_sample:
+                break
+
+            samples.extend(tokens[:-1])
+
+            if message["role"] == "assistant" or self.train_on_inputs:
                 labels.extend(tokens[1:])
             else:
                 labels.extend([self.padding_index] * (len(tokens) - 1))
@@ -241,7 +313,7 @@ def left_pad_collate(batch: list, padding_index: int) -> tuple[Tensor, Tensor]:
 
     max_sequence_len = max([len(samples) for samples, _ in batch])
 
-    x, y = [], []
+    x_hat, y_hat = [], []
 
     for samples, labels in batch:
         pad_length = max_sequence_len - len(samples)
@@ -251,11 +323,11 @@ def left_pad_collate(batch: list, padding_index: int) -> tuple[Tensor, Tensor]:
         padded_samples = torch.cat((padding, samples))
         padded_labels = torch.cat((padding, labels))
 
-        x.append(padded_samples)
-        y.append(padded_labels)
+        x_hat.append(padded_samples)
+        y_hat.append(padded_labels)
 
-    x = torch.stack(x)
-    y = torch.stack(y)
+    x = torch.stack(x_hat)
+    y = torch.stack(y_hat)
 
     assert x.shape == y.shape, "Sample / label shape mismatch."
 

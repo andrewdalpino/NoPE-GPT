@@ -2,14 +2,14 @@ from collections import deque
 
 from itertools import chain
 
-from typing import Iterator
+from typing import Iterator, Deque
 
 
 class ChatMemory:
     """A simple in-memory short-term memory store for interactive chat sessions."""
 
     def __init__(self, max_length: int):
-        self.messages = deque()
+        self.messages: Deque[list[int]] = deque()
         self.total_length = 0
 
         self.max_length = max_length

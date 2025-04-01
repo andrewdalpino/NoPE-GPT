@@ -8,7 +8,7 @@ import torch
 from torch.cuda import is_available as cuda_is_available
 
 from model import LightGPT
-from data import SmolTalk
+from data import SmolTalk, CHATML_PROMPT_TEMPLATE
 from memory import ChatMemory
 
 DEFAULT_SYSTEM_MESSAGE = (
@@ -84,7 +84,7 @@ def main():
     if not system_message:
         system_message = DEFAULT_SYSTEM_MESSAGE
 
-    system_message = SmolTalk.PROMPT_TEMPLATE.format(
+    system_message = CHATML_PROMPT_TEMPLATE.format(
         role="system", message=system_message
     )
 
@@ -97,7 +97,7 @@ def main():
     while True:
         instruction = input("Enter a prompt: ")
 
-        instruction = SmolTalk.PROMPT_TEMPLATE.format(role="user", message=instruction)
+        instruction = CHATML_PROMPT_TEMPLATE.format(role="user", message=instruction)
 
         instruction_tokens = tokenizer.encode(instruction, allowed_special="all")
 

@@ -121,7 +121,8 @@ class LightGPT(Module):
             )
 
         new_embeddings = Embedding(
-            vocabulary_size, self.embedding_dimensions,
+            vocabulary_size,
+            self.embedding_dimensions,
         ).to(self.token_embeddings.weight.device)
 
         num_tokens_to_copy = min(vocabulary_size, self.token_embeddings.num_embeddings)
@@ -352,9 +353,7 @@ class LightGPTHuggingFaceModel(PreTrainedModel):
             config.dropout,
         )
 
-    def forward(
-        self, x: Tensor, y: Tensor | None = None
-    ) -> tuple[Tensor, Tensor | None]:
+    def forward(self, x: Tensor, y: Tensor | None = None) -> dict[str, Tensor | None]:
         logits, loss = self.model.forward(x, y)
 
         return {

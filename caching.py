@@ -51,7 +51,7 @@ class KVCache(Module):
 
         self.context_length = context_length
 
-    def update(self, k: Tensor, v: Tensor) -> None:
+    def update(self, k: Tensor, v: Tensor) -> tuple[Tensor, Tensor]:
         self.k = torch.cat((self.k, k), dim=2)
         self.v = torch.cat((self.v, v), dim=2)
 

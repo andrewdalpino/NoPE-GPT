@@ -135,13 +135,13 @@ def main():
 
     state_dict = checkpoint["model"]
 
-    # Compensate for poorly designed compiled state dicts.
+    # Compensate for compiled state dict.
     for key in list(state_dict.keys()):
         state_dict[key.replace("_orig_mod.", "")] = state_dict.pop(key)
 
     model.load_state_dict(state_dict)
 
-    print("Model checkpoint loaded")
+    print("Base checkpoint loaded")
 
     lora_args = {
         "rank": args.rank,
@@ -255,6 +255,7 @@ def main():
             checkpoint = {
                 "epoch": epoch,
                 "tokenizer": tokenizer,
+                "padding_index": padding_index,
                 "token_embeddings": model.token_embeddings.state_dict(),
                 "lora_args": lora_args,
                 "lora": model.lora_state_dict(),
