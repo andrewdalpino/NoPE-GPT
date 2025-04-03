@@ -1,11 +1,39 @@
+from typing import Self, Iterator
+
 import torch
 
 from torch import Tensor
-from torch.nn import Module, Buffer
+from torch.nn import Module, ModuleList, Buffer
 
 
 class KVCache(Module):
-    """A Key-value cache for optimizing inference-time self-attention mechanism."""
+    """Key-value cache for all layers of the model."""
+
+    def __init__(self, model: Module, batch_size: int, context_length: int):
+        super().__init__()
+
+        from model import SelfAttention
+
+        self.kv_blocks = ModuleList(
+            [
+                DynamicKVBlock(
+                    batch_size,
+                    layer.embedding_dimensions,
+                    layer.num_heads,
+                    context_length,
+                )
+                for layer in model.modules()
+                if isinstance(layer, SelfAttention)
+            ]
+        )
+
+    def __iter__(self) -> Iterator["DynamicKVBlock"]:
+        for kv_block in self.kv_blocks:
+            yield kv_block
+
+
+class DynamicKVBlock(Module):
+    """A key-value block for a single layer with dynamic memory allocation."""
 
     def __init__(
         self,

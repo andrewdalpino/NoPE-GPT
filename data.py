@@ -18,7 +18,7 @@ from torch.nn.utils.rnn import pad_sequence
 from tqdm import tqdm
 
 
-CHATML_PROMPT_TEMPLATE = "<|im_start|>{role}\n{message}\n<|im_end|>\n"
+CHATML_TEMPLATE = "<|im_start|>{role}\n{message}\n<|im_end|>\n"
 
 
 class Fineweb(IterableDataset):
@@ -111,7 +111,7 @@ class Fineweb(IterableDataset):
 
         tokens_per_epoch = samples_per_epoch * (tokens_per_sample + 1)
 
-        start = 4 * tokens_per_epoch if split == "train" else 0
+        start = tokens_per_epoch if split == "train" else 0
         end = len(memmap) if split == "train" else tokens_per_epoch
 
         max_offset = end - tokens_per_epoch
@@ -206,7 +206,7 @@ class SmolTalk(Dataset):
         samples, labels = [], []
 
         for message in row["messages"]:
-            text = CHATML_PROMPT_TEMPLATE.format(
+            text = CHATML_TEMPLATE.format(
                 role=message["role"],
                 message=message["content"],
             )
@@ -278,7 +278,7 @@ class UltraFeedback(Dataset):
         samples, labels = [], []
 
         for message in row["messages"]:
-            text = CHATML_PROMPT_TEMPLATE.format(
+            text = CHATML_TEMPLATE.format(
                 role=message["role"],
                 message=message["content"],
             )

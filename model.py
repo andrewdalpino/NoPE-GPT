@@ -1,6 +1,7 @@
 from math import sqrt
 from functools import partial
 from typing import Iterator, Self
+from collections.abc import Generator
 
 import torch
 
@@ -24,7 +25,7 @@ from torch.utils.checkpoint import checkpoint as torch_checkpoint
 
 from transformers import PretrainedConfig, PreTrainedModel
 
-from caching import KVCache
+from caching import KVCache, DynamicKVBlock
 
 
 class LightGPT(Module):
@@ -120,10 +121,9 @@ class LightGPT(Module):
                 f"Vocabulary size must be greater than 0, {vocabulary_size} given."
             )
 
-        new_embeddings = Embedding(
-            vocabulary_size,
-            self.embedding_dimensions,
-        ).to(self.token_embeddings.weight.device)
+        new_embeddings = Embedding(vocabulary_size, self.embedding_dimensions)
+
+        new_embeddings = new_embeddings.to(self.token_embeddings.weight.device)
 
         num_tokens_to_copy = min(vocabulary_size, self.token_embeddings.num_embeddings)
 
@@ -131,7 +131,7 @@ class LightGPT(Module):
             :num_tokens_to_copy, :
         ]
 
-        # Initialize new embeddings
+        # Initialize new embeddings with kaiming normal.
         for i in range(num_tokens_to_copy, vocabulary_size):
             new_embeddings.weight[i] = torch.randn(self.embedding_dimensions) / sqrt(
                 self.embedding_dimensions
@@ -213,13 +213,13 @@ class LightGPT(Module):
         return z, loss
 
     @torch.no_grad()
-    def predict(self, x: Tensor, kv_caches: list[KVCache]) -> Tensor:
+    def predict(self, x: Tensor, kv_cache: ModuleList) -> Tensor:
         """A forward pass optimized for next-token prediction."""
 
         z = self.token_embeddings(x)
 
-        for layer, kv_cache in zip(self.body, kv_caches):
-            z = layer.predict(z, kv_cache)
+        for layer, kv_block in zip(self.body, kv_cache):
+            z = layer.predict(z, kv_block)
 
         z = z[:, -1, :]  # Pluck only the last token embedding from each batch.
 
@@ -237,8 +237,7 @@ class LightGPT(Module):
         temperature: float = 1.0,
         top_k: int = 500,
         top_p: float = 0.9,
-        eos_indices: set = set(),
-    ) -> Iterator:
+    ) -> Generator[int, None, int]:
         """
         Given a prompt, sample the next {max_tokens} tokens from the model weighted
         by their predicted probabilities and filtered by the {top_k} and {top_p}.
@@ -265,20 +264,14 @@ class LightGPT(Module):
         if top_p <= 0.0 or top_p > 1.0:
             raise ValueError(f"Top p must be between 0 and 1, {top_p} given.")
 
-        kv_caches = [
-            KVCache(
-                1,
-                self.embedding_dimensions,
-                self.num_heads,
-                context_length,
-            ).to(prompt.device)
-            for _ in range(self.num_layers)
-        ]
+        kv_cache = KVCache(self, 1, context_length).to(prompt.device)
 
         prompt = prompt[-context_length:]
 
-        for _ in range(max_tokens):
-            logits = self.predict(prompt.unsqueeze(0), kv_caches).squeeze()
+        num_tokens = 0
+
+        while num_tokens < max_tokens:
+            logits = self.predict(prompt.unsqueeze(0), kv_cache).squeeze()
 
             logits, indices = torch.topk(logits, top_k, sorted=True)
 
@@ -303,12 +296,13 @@ class LightGPT(Module):
 
             next_token = indices[offset]
 
-            if next_token.item() in eos_indices:
-                break
+            yield next_token.item()
 
-            yield next_token
+            num_tokens += 1
 
             prompt = next_token.unsqueeze(0)
+
+        return num_tokens
 
 
 class LightGPTHuggingFaceConfig(PretrainedConfig):
@@ -396,11 +390,11 @@ class DecoderBlock(Module):
         return z
 
     @torch.no_grad()
-    def predict(self, x: Tensor, kv_cache: KVCache) -> Tensor:
+    def predict(self, x: Tensor, kv_block: DynamicKVBlock) -> Tensor:
         """A forward pass optimized for next-token prediction."""
 
         z = self.norm1(x)
-        z = self.attention.predict(z, kv_cache)
+        z = self.attention.predict(z, kv_block)
 
         z = x + z  # Residual connection
 
@@ -473,10 +467,12 @@ class SelfAttention(Module):
         return z
 
     @torch.no_grad()
-    def predict(self, x: Tensor, kv_cache: KVCache) -> Tensor:
+    def predict(self, x: Tensor, kv_block: DynamicKVBlock) -> Tensor:
         """A forward pass optimized for next-token prediction."""
 
         b, t, d = x.size()
+
+        is_prompt_phase = t > 1
 
         q, k, v = self.qkv_proj(x).split(self.embedding_dimensions, dim=-1)
 
@@ -484,15 +480,14 @@ class SelfAttention(Module):
         k = k.view(b, t, self.num_heads, self.head_dimensions).transpose(1, 2)
         v = v.view(b, t, self.num_heads, self.head_dimensions).transpose(1, 2)
 
-        k, v = kv_cache.update(k, v)
+        k, v = kv_block.update(k, v)
 
         z = scaled_dot_product_attention(
             q,
             k,
             v,
             scale=self.scale,
-            dropout_p=0.0,
-            is_causal=t > 1,
+            is_causal=is_prompt_phase,
         )
 
         z = z.transpose(1, 2).contiguous().view(b, t, d)

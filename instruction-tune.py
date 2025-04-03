@@ -5,7 +5,7 @@ from argparse import ArgumentParser
 
 import torch
 
-from torch.utils.data import DataLoader
+from torch.utils.data import ConcatDataset, DataLoader
 from torch.optim import Adafactor
 from torch.amp import autocast
 from torch.cuda import is_available as cuda_is_available, is_bf16_supported
@@ -16,20 +16,26 @@ from torch.utils.tensorboard import SummaryWriter
 from torchmetrics.text import Perplexity
 
 from model import LightGPT
-from data import SmolTalk, left_pad_collate
+from data import SmolTalk, UltraFeedback, left_pad_collate
 
 from tiktoken import Encoding
 
 from tqdm import tqdm
 
+DATASET_SUBSETS = SmolTalk.SUBSETS | {"ultra-feedback"}
+
 
 def main():
     parser = ArgumentParser(description="Instruction fine-tune the GPT.")
 
+    csv_list = partial(str.split, sep=",")
+
     parser.add_argument(
         "--base_checkpoint_path", default="./checkpoints/checkpoint.pt", type=str
     )
-    parser.add_argument("--dataset_subset", default="all", choices=SmolTalk.SUBSETS)
+    parser.add_argument(
+        "--dataset_subsets", default=["all", "ultra-feedback"], type=csv_list
+    )
     parser.add_argument("--num_dataset_processes", default=2, type=int)
     parser.add_argument("--max_tokens_per_sample", default=1048, type=int)
     parser.add_argument("--train_on_inputs", action="store_true")
@@ -55,6 +61,39 @@ def main():
     parser.add_argument("--seed", default=None, type=int)
 
     args = parser.parse_args()
+
+    if len(args.dataset_subsets) == 0:
+        raise ValueError("No dataset subsets provided.")
+
+    for subset in args.dataset_subsets:
+        if subset not in DATASET_SUBSETS:
+            raise ValueError(f"Invalid dataset subset, {subset} given.")
+
+    if args.batch_size < 1:
+        raise ValueError(f"Batch size must be greater than 0, {args.batch_size} given.")
+
+    if args.gradient_accumulation_steps < 1:
+        raise ValueError(
+            f"Gradient accumulation steps must be greater than 0, {args.gradient_accumulation_steps} given."
+        )
+
+    if args.learning_rate < 0:
+        raise ValueError(
+            f"Learning rate must be a positive value, {args.learning_rate} given."
+        )
+
+    if args.num_epochs < 1:
+        raise ValueError(f"Must train for at least 1 epoch, {args.num_epochs} given.")
+
+    if args.eval_interval < 1:
+        raise ValueError(
+            f"Eval interval must be greater than 0, {args.eval_interval} given."
+        )
+
+    if args.checkpoint_interval < 1:
+        raise ValueError(
+            f"Checkpoint interval must be greater than 0, {args.checkpoint_interval} given."
+        )
 
     if "cuda" in args.device and not cuda_is_available():
         raise RuntimeError("Cuda is not available.")
@@ -97,15 +136,34 @@ def main():
         },
     )
 
-    dataset = SmolTalk(
-        tokenizer,
-        subset=args.dataset_subset,
-        max_tokens_per_sample=args.max_tokens_per_sample,
-        train_on_inputs=args.train_on_inputs,
-        padding_index=padding_index,
-    )
+    datasets = []
 
-    _, training, testing, _ = random_split(dataset, (0.0, 0.09, 0.01, 0.9))
+    for subset in set(args.dataset_subsets):
+        if subset in SmolTalk.SUBSETS:
+            datasets.append(
+                SmolTalk(
+                    tokenizer,
+                    subset=subset,
+                    max_tokens_per_sample=args.max_tokens_per_sample,
+                    train_on_inputs=args.train_on_inputs,
+                    padding_index=padding_index,
+                )
+            )
+
+        if subset == "ultra-feedback":
+            datasets.append(
+                UltraFeedback(
+                    tokenizer,
+                    split="train",
+                    max_tokens_per_sample=args.max_tokens_per_sample,
+                    train_on_inputs=args.train_on_inputs,
+                    padding_index=padding_index,
+                )
+            )
+
+    dataset = ConcatDataset(datasets)
+
+    training, testing = random_split(dataset, (0.9, 0.1))
 
     collate = partial(left_pad_collate, padding_index=padding_index)
 
@@ -143,16 +201,17 @@ def main():
 
     print("Base checkpoint loaded")
 
+    model.freeze_model_parameters()
+    model.resize_token_embeddings(tokenizer.n_vocab)
+    model.set_padding_token_index(padding_index)
+    model.unfreeze_token_embeddings()
+
     lora_args = {
         "rank": args.rank,
         "alpha": args.alpha,
         "dropout": args.dropout,
     }
 
-    model.freeze_model_parameters()
-    model.resize_token_embeddings(tokenizer.n_vocab)
-    model.set_padding_token_index(padding_index)
-    model.unfreeze_token_embeddings()
     model.add_lora_parameters(**lora_args)
 
     model = model.to(args.device)
@@ -225,7 +284,8 @@ def main():
         logger.add_scalar("Gradient Norm", average_gradient_norm, epoch)
 
         print(
-            f"Epoch {epoch}:" f"Cross Entropy: {average_cross_entropy:.5f},",
+            f"Epoch {epoch}:",
+            f"Cross Entropy: {average_cross_entropy:.5f},",
             f"Gradient Norm: {average_gradient_norm:.4f}",
         )
 
@@ -255,7 +315,6 @@ def main():
             checkpoint = {
                 "epoch": epoch,
                 "tokenizer": tokenizer,
-                "padding_index": padding_index,
                 "token_embeddings": model.token_embeddings.state_dict(),
                 "lora_args": lora_args,
                 "lora": model.lora_state_dict(),

@@ -1,6 +1,7 @@
 import random
 
 from os import path
+from functools import partial
 from argparse import ArgumentParser
 
 import torch
@@ -8,7 +9,7 @@ import torch
 from torch.cuda import is_available as cuda_is_available
 
 from model import LightGPT
-from data import SmolTalk, CHATML_PROMPT_TEMPLATE
+from data import CHATML_TEMPLATE
 from memory import ChatMemory
 
 DEFAULT_SYSTEM_MESSAGE = (
@@ -22,10 +23,12 @@ def main():
     parser = ArgumentParser(description="Chat with the instruction-tuned model.")
 
     parser.add_argument(
-        "--checkpoint_path", default="./checkpoints/checkpoint.pt", type=str
+        "--base_checkpoint_path", default="./checkpoints/checkpoint.pt", type=str
     )
-    parser.add_argument("--lora_path", default="./checkpoints/instruct.pt", type=str)
-    parser.add_argument("--max_tokens", default=2000, type=int)
+    parser.add_argument(
+        "--lora_checkpoint_path", default="./checkpoints/instruct.pt", type=str
+    )
+    parser.add_argument("--max_tokens", default=500, type=int)
     parser.add_argument("--context_length", default=1024, type=int)
     parser.add_argument("--temperature", default=1.0, type=float)
     parser.add_argument("--top_k", default=500, type=int)
@@ -45,7 +48,7 @@ def main():
         random.seed(args.seed)
 
     checkpoint = torch.load(
-        args.checkpoint_path, map_location=args.device, weights_only=False
+        args.base_checkpoint_path, map_location=args.device, weights_only=False
     )
 
     model = LightGPT(**checkpoint["model_args"])
@@ -57,21 +60,17 @@ def main():
     print("Model checkpoint loaded")
 
     checkpoint = torch.load(
-        args.lora_path, map_location=args.device, weights_only=False
+        args.lora_checkpoint_path, map_location=args.device, weights_only=False
     )
 
     tokenizer = checkpoint["tokenizer"]
 
-    eos_indices = {tokenizer.eot_token}
-
-    model = model.resize_token_embeddings(tokenizer.n_vocab).add_lora_parameters(
-        **checkpoint["lora_args"]
-    )
-
+    model.resize_token_embeddings(tokenizer.n_vocab)
     model.token_embeddings.load_state_dict(checkpoint["token_embeddings"])
-    model.load_state_dict(checkpoint["lora"], strict=False)
 
-    model = model.merge_lora_parameters()
+    model.add_lora_parameters(**checkpoint["lora_args"])
+    model.load_state_dict(checkpoint["lora"], strict=False)
+    model.merge_lora_parameters()
 
     print("LoRA checkpoint loaded")
 
@@ -84,9 +83,7 @@ def main():
     if not system_message:
         system_message = DEFAULT_SYSTEM_MESSAGE
 
-    system_message = CHATML_PROMPT_TEMPLATE.format(
-        role="system", message=system_message
-    )
+    system_message = CHATML_TEMPLATE.format(role="system", message=system_message)
 
     system_message_tokens = tokenizer.encode(system_message, allowed_special="all")
 
@@ -94,10 +91,19 @@ def main():
 
     memory = ChatMemory(max_message_history_length)
 
+    generate = partial(
+        model.generate,
+        max_tokens=args.max_tokens,
+        context_length=args.context_length,
+        temperature=args.temperature,
+        top_k=args.top_k,
+        top_p=args.top_p,
+    )
+
     while True:
         instruction = input("Enter a prompt: ")
 
-        instruction = CHATML_PROMPT_TEMPLATE.format(role="user", message=instruction)
+        instruction = CHATML_TEMPLATE.format(role="user", message=instruction)
 
         instruction_tokens = tokenizer.encode(instruction, allowed_special="all")
 
@@ -109,26 +115,19 @@ def main():
 
         prompt = torch.tensor(prompt, dtype=torch.int64, device=args.device)
 
-        generator = model.generate(
-            prompt,
-            args.max_tokens,
-            args.context_length,
-            args.temperature,
-            args.top_k,
-            args.top_p,
-            eos_indices,
-        )
-
         message_tokens = []
 
-        for token in generator:
+        for token in generate(prompt):
             out = tokenizer.decode_single_token_bytes(token).decode(
                 "utf-8", errors="replace"
             )
 
             print(out, end="", flush=True)
 
-            message_tokens.append(token.item())
+            message_tokens.append(token)
+
+            if token == tokenizer.eot_token:
+                break
 
         print("\n")
 

@@ -28,7 +28,6 @@ class TestLightGPT(unittest.TestCase):
             num_layers=2,
             feed_forward_ratio=4,
             dropout=0.1,
-            padding_index=0,
         )
 
         # Use CPU for testing
@@ -64,7 +63,6 @@ class TestLightGPT(unittest.TestCase):
                 num_layers=2,
                 feed_forward_ratio=4,
                 dropout=0.1,
-                padding_index=0,
             )
 
         with self.assertRaises(ValueError):
@@ -75,7 +73,6 @@ class TestLightGPT(unittest.TestCase):
                 num_layers=0,  # Invalid
                 feed_forward_ratio=4,
                 dropout=0.1,
-                padding_index=0,
             )
 
     def test_forward(self):
@@ -108,10 +105,10 @@ class TestLightGPT(unittest.TestCase):
         # Create input tensor
         x = torch.randint(0, 1000, (batch_size, seq_len), device=self.device)
 
-        kv_caches = [KVCache(2, 128, 8, 20).to(x.device) for _ in range(2)]
+        kv_cache = KVCache(self.model, batch_size, seq_len).to(x.device)
 
         # Get predictions
-        logits = self.model.predict(x, kv_caches)
+        logits = self.model.predict(x, kv_cache)
 
         # Check output shape (should be [batch_size, vocab_size])
         self.assertEqual(logits.shape, (batch_size, 1000))
@@ -140,10 +137,9 @@ class TestLightGPT(unittest.TestCase):
         # Check that the right number of tokens was generated
         self.assertLessEqual(len(generated_tokens), max_tokens)
 
-        # Check that each token is a tensor
+        # Check that each token is an integer
         for token in generated_tokens:
-            self.assertTrue(isinstance(token, torch.Tensor))
-            self.assertEqual(token.dim(), 0)  # It should be a scalar tensor
+            self.assertTrue(isinstance(token, int))
 
     def test_generate_with_invalid_params(self):
         """Test that generate fails with invalid parameters."""
@@ -356,7 +352,7 @@ class TestMLP(unittest.TestCase):
 
     def setUp(self):
         """Set up an MLP module for testing."""
-        self.mlp = MLP(embedding_dimensions=128, hidden_dimensions=512, dropout=0.1)
+        self.mlp = MLP(embedding_dimensions=128, feed_forward_ratio=4, dropout=0.1)
 
     def test_initialization(self):
         """Test that the module initializes correctly."""
@@ -371,11 +367,9 @@ class TestMLP(unittest.TestCase):
 
     def test_initialization_with_invalid_params(self):
         """Test that initialization fails with invalid parameters."""
-        with self.assertRaises(ValueError):
-            MLP(embedding_dimensions=0, hidden_dimensions=512, dropout=0.1)  # Invalid
 
         with self.assertRaises(ValueError):
-            MLP(embedding_dimensions=128, hidden_dimensions=0, dropout=0.1)  # Invalid
+            MLP(embedding_dimensions=128, feed_forward_ratio=0, dropout=0.1)  # Invalid
 
     def test_forward(self):
         """Test the forward pass of the MLP module."""
@@ -492,7 +486,6 @@ class TestLightGPTHuggingFaceConfig(unittest.TestCase):
         self.assertEqual(config.num_layers, 24)
         self.assertEqual(config.feed_forward_ratio, 4)
         self.assertEqual(config.dropout, 0.1)
-        self.assertEqual(config.padding_index, -100)
         self.assertEqual(config.model_type, "lightgpt")
 
     def test_custom_initialization(self):
@@ -504,7 +497,6 @@ class TestLightGPTHuggingFaceConfig(unittest.TestCase):
             num_layers=2,
             feed_forward_ratio=2,
             dropout=0.2,
-            padding_index=0,
         )
 
         self.assertEqual(config.vocabulary_size, 1000)
@@ -513,7 +505,6 @@ class TestLightGPTHuggingFaceConfig(unittest.TestCase):
         self.assertEqual(config.num_layers, 2)
         self.assertEqual(config.feed_forward_ratio, 2)
         self.assertEqual(config.dropout, 0.2)
-        self.assertEqual(config.padding_index, 0)
         self.assertEqual(config.model_type, "lightgpt")
 
 

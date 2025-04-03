@@ -1,6 +1,6 @@
 # LightGPT
 
-LightGPT is a lightweight generative pretrained Transformer (GPT) language model for the people! Built using [PyTorch](https://pytorch.org/) and trained on HuggingFace's [Fineweb](https://huggingface.co/datasets/HuggingFaceFW/fineweb) and [SmolTalk](https://huggingface.co/datasets/HuggingFaceTB/smoltalk) datasets, LightGPT can answer questions, follow instructions, summarize documents, chat, and more. Best of all, the model weights *and* code are fully open-source for you to customize, improve upon, and share with the world.
+LightGPT is a lightweight generative pretrained Transformer (GPT) language model for the people! Built using [PyTorch](https://pytorch.org/) and trained on HuggingFace's [Fineweb](https://huggingface.co/datasets/HuggingFaceFW/fineweb), [SmolTalk](https://huggingface.co/datasets/HuggingFaceTB/smoltalk), and [UltraFeedback](https://huggingface.co/datasets/HuggingFaceH4/ultrafeedback_binarized) datasets, LightGPT can answer questions, follow instructions, summarize documents, chat, and more. Best of all, the model weights *and* code are fully open-source for you to customize, improve upon, and share with the world.
 
 ## Features
 
@@ -102,7 +102,7 @@ torchrun --standalone --nnodes=1 --nproc-per-node=8 pretrain.py --batch_size=16 
 
 ## Instruction-tuning
 
-Instruction-tuning is a supervised training technique focused on developing specialized objectives such as chatting, text summarization, chain-of-thought, and prompt rewriting. The overall objective is still to predict the next token but the dataset has been curated for these more specialized objectives. In addition, we introduce two special tokens (`<|im_start|>` and `<|im_end|>`) that demarcate system, user, and assistant messages for use in the ChatML format. We use the SmolTalk dataset by HuggingFace as the fine-tuning corpus because it includes supervised training data for a broad range of tasks.
+Instruction-tuning is a supervised training technique focused on developing specialized objectives such as chatting, text summarization, chain-of-thought, and prompt rewriting. The overall objective is still to predict the next token but the dataset has been curated for these more specialized objectives. In addition, we introduce three new special tokens (`<|pad|>`, `<|im_start|>` and `<|im_end|>`) that demarcate padding tokens and system, user, and assistant messages for use in the ChatML format. We use the SmolTalk and UltraFeedback datasets by HuggingFace as fine-tuning corpora because they include a broad range of training objectives such as conversation, instruction following, summarization, and human preference alignment.
 
 Unlike pre-training, fine-tuning is not as resource intensive due to training much fewer parameters. The default arguments will work for most GPUs with 12G of VRAM or more.
 
@@ -110,13 +110,19 @@ Unlike pre-training, fine-tuning is not as resource intensive due to training mu
 python instruction-tune.py
 ```
 
+To pick which dataset subsets to train on you can specify them in a comma-separated list like in the example below.
+
+```
+python instruction-tune.py --dataset_subsets=smol-magpie-ultra,smol-summarize,ultra-feedback
+```
+
 You can also adjust the `batch_size`, `learning_rate`, and `gradient_accumulation_steps` just like we did with pre-training.
 
 ```
-python instruction-tune.py --batch_size=32 --learning_rate=0.01 --gradient_accumulation_steps=128
+python instruction-tune.py --batch_size=32 --learning_rate=0.01 --gradient_accumulation_steps=32
 ```
 
-To adjust the number of trainable parameters as well as the strength of the LoRA and Dropout signals you can change the `--rank`, `--alpha`, and `--dropout` arguments respectively.
+To adjust the number of trainable LoRA parameters as well as the strength of the LoRA and Dropout signals you can change the `--rank`, `--alpha`, and `--dropout` arguments respectively.
 
 ```
 python instruction-tune.py --rank=4 --alpha=0.8 --dropout=0.1
@@ -127,7 +133,7 @@ python instruction-tune.py --rank=4 --alpha=0.8 --dropout=0.1
 | Argument | Default | Type | Description |
 |---|---|---|---|
 | --base_model_path | "./checkpoints/checkpoint.pt" | string | The path to the base checkpoint on disk. |
-| --dataset_subset | "all" | str | The subset of the SmolTalk dataset to train on. Options are `all`, `apigen-80k`, `everyday-conversations`, `explore-instruct-rewriting`, `longalign`, `metamathqa-50k`, `numina-cot-100k`, `openhermes-100k`, `self-oss-instruct`, `smol-constraints`, `smol-magpie-ultra`, `smol-rewrite`, `smol-summarize`, and `systemchats-30k`. |
+| --dataset_subset | "all,ultra-feedback" | str | A comma-separated list of subsets of the dataset to train on. Options are `all`, `apigen-80k`, `everyday-conversations`, `explore-instruct-rewriting`, `longalign`, `metamathqa-50k`, `numina-cot-100k`, `openhermes-100k`, `self-oss-instruct`, `smol-constraints`, `smol-magpie-ultra`, `smol-rewrite`, `smol-summarize`, `systemchats-30k`, and `ultra-feedback`. |
 | --max_tokens_per_sample | 1024 | int | The maximum number of tokens to pack into a single training sequence. |
 | --train_on_inputs | False | bool | Should we mask the system and user parts of the training sequences i.e. only train on the supervised output? |
 | --batch_size | 2 | int | The number of samples to pass through the network at a time. |

@@ -1,6 +1,7 @@
 import random
 
 from os import path
+from functools import partial
 from argparse import ArgumentParser
 
 import torch
@@ -18,7 +19,7 @@ def main():
     parser.add_argument(
         "--checkpoint_path", default="./checkpoints/checkpoint.pt", type=str
     )
-    parser.add_argument("--max_tokens", default=2000, type=int)
+    parser.add_argument("--max_tokens", default=1000, type=int)
     parser.add_argument("--context_length", default=1024, type=int)
     parser.add_argument("--temperature", default=1.0, type=float)
     parser.add_argument("--top_k", default=500, type=int)
@@ -43,8 +44,6 @@ def main():
 
     tokenizer = checkpoint["tokenizer"]
 
-    eos_indices = {tokenizer.eot_token}
-
     model = LightGPT(**checkpoint["model_args"])
 
     model = torch.compile(model)
@@ -57,6 +56,15 @@ def main():
 
     model.eval()
 
+    generate = partial(
+        model.generate,
+        max_tokens=args.max_tokens,
+        context_length=args.context_length,
+        temperature=args.temperature,
+        top_k=args.top_k,
+        top_p=args.top_p,
+    )
+
     while True:
         prompt = input("Enter a prompt: ")
 
@@ -64,20 +72,15 @@ def main():
 
         prompt = torch.tensor(prompt, dtype=torch.int64, device=args.device)
 
-        for token in model.generate(
-            prompt,
-            args.max_tokens,
-            args.context_length,
-            args.temperature,
-            args.top_k,
-            args.top_p,
-            eos_indices,
-        ):
+        for token in generate(prompt):
             out = tokenizer.decode_single_token_bytes(token).decode(
                 "utf-8", errors="replace"
             )
 
             print(out, end="", flush=True)
+
+            if token == tokenizer.eot_token:
+                break
 
         print("\n")
 
