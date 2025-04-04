@@ -1,6 +1,6 @@
 from math import sqrt
 from functools import partial
-from typing import Iterator, Self
+from typing import Self
 from collections.abc import Generator
 
 import torch
@@ -131,7 +131,7 @@ class LightGPT(Module):
             :num_tokens_to_copy, :
         ]
 
-        # Initialize new embeddings with kaiming normal.
+        # Initialize new embeddings with kaiming normal distribution.
         for i in range(num_tokens_to_copy, vocabulary_size):
             new_embeddings.weight[i] = torch.randn(self.embedding_dimensions) / sqrt(
                 self.embedding_dimensions
@@ -213,7 +213,7 @@ class LightGPT(Module):
         return z, loss
 
     @torch.no_grad()
-    def predict(self, x: Tensor, kv_cache: ModuleList) -> Tensor:
+    def predict(self, x: Tensor, kv_cache: KVCache) -> Tensor:
         """A forward pass optimized for next-token prediction."""
 
         z = self.token_embeddings(x)
@@ -296,7 +296,7 @@ class LightGPT(Module):
 
             next_token = indices[offset]
 
-            yield next_token.item()
+            yield int(next_token.item())
 
             num_tokens += 1
 
@@ -472,7 +472,7 @@ class SelfAttention(Module):
 
         b, t, d = x.size()
 
-        is_prompt_phase = t > 1
+        is_autoregressive_phase = t == 0
 
         q, k, v = self.qkv_proj(x).split(self.embedding_dimensions, dim=-1)
 
@@ -487,7 +487,7 @@ class SelfAttention(Module):
             k,
             v,
             scale=self.scale,
-            is_causal=is_prompt_phase,
+            is_causal=not is_autoregressive_phase,
         )
 
         z = z.transpose(1, 2).contiguous().view(b, t, d)
@@ -552,8 +552,11 @@ class LoRA(Module):
         if alpha <= 0.0:
             raise ValueError(f"Alpha must be greater than 0, {alpha} given.")
 
-        self.lora_a = Parameter(torch.randn(rank, in_features) / sqrt(rank))
-        self.lora_b = Parameter(torch.zeros(out_features, rank))
+        lora_a = torch.randn(rank, in_features) / sqrt(rank)
+        lora_b = torch.zeros(out_features, rank)
+
+        self.lora_a = Parameter(lora_a)
+        self.lora_b = Parameter(lora_b)
 
         self.dropout = Dropout1d(dropout)
 

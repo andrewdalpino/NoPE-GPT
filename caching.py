@@ -5,25 +5,24 @@ import torch
 from torch import Tensor
 from torch.nn import Module, ModuleList, Buffer
 
+from model import LightGPT
+
 
 class KVCache(Module):
     """Key-value cache for all layers of the model."""
 
-    def __init__(self, model: Module, batch_size: int, context_length: int):
+    def __init__(self, model: LightGPT, batch_size: int, context_length: int):
         super().__init__()
-
-        from model import SelfAttention
 
         self.kv_blocks = ModuleList(
             [
                 DynamicKVBlock(
                     batch_size,
-                    layer.embedding_dimensions,
-                    layer.num_heads,
+                    layer.attention.embedding_dimensions,
+                    layer.attention.num_heads,
                     context_length,
                 )
-                for layer in model.modules()
-                if isinstance(layer, SelfAttention)
+                for layer in model.body
             ]
         )
 
@@ -67,24 +66,31 @@ class DynamicKVBlock(Module):
 
         head_dimensions = embedding_dimensions // num_heads
 
-        self.k = Buffer(
-            torch.empty(batch_size, num_heads, 0, head_dimensions),
-            persistent=False,
-        )
+        k_cache = torch.empty(batch_size, num_heads, 0, head_dimensions)
+        v_cache = torch.empty(batch_size, num_heads, 0, head_dimensions)
 
-        self.v = Buffer(
-            torch.empty(batch_size, num_heads, 0, head_dimensions),
-            persistent=False,
-        )
+        self.k_cache = Buffer(k_cache, persistent=False)
+        self.v_cache = Buffer(v_cache, persistent=False)
 
         self.context_length = context_length
 
     def update(self, k: Tensor, v: Tensor) -> tuple[Tensor, Tensor]:
-        self.k = torch.cat((self.k, k), dim=2)
-        self.v = torch.cat((self.v, v), dim=2)
+        """Update the cache with a new key-value pairs.
+        Args:
+            k (Tensor): Key tensor of shape (batch_size, num_heads, seq_len, head_dimensions).
+            v (Tensor): Value tensor of shape (batch_size, num_heads, seq_len, head_dimensions).
+        Returns:
+            tuple[Tensor, Tensor]: Updated key and value caches.
+        """
 
-        if self.k.size(2) > self.context_length:
-            self.k = self.k[:, :, -self.context_length :, :]
-            self.v = self.v[:, :, -self.context_length :, :]
+        k_cache = torch.cat((self.k_cache, k), dim=2)
+        v_cache = torch.cat((self.v_cache, v), dim=2)
 
-        return self.k, self.v
+        if self.k_cache.size(2) > self.context_length:
+            k_cache = self.k_cache[:, :, -self.context_length :]
+            v_cache = self.v_cache[:, :, -self.context_length :]
+
+        self.k_cache.data = k_cache
+        self.v_cache.data = v_cache
+
+        return self.k_cache, self.v_cache

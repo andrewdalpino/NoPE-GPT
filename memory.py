@@ -15,7 +15,11 @@ class ChatMemory:
         self.max_length = max_length
 
     def add_message(self, message: list[int]):
-        """Add a message to the chat history."""
+        """Add a message to the chat history.
+
+        Args:
+            message (list[int]): The token-encoded message to add.
+        """
 
         self.messages.append(message)
 
@@ -27,6 +31,10 @@ class ChatMemory:
             self.total_length -= len(old_message)
 
     def get_history(self) -> Iterator[int]:
-        """Return the most recent chat history."""
+        """Return the most recent chat history.
+
+        Returns:
+            Iterator[int]: An iterator over the chat history.
+        """
 
         return chain.from_iterable(self.messages)

@@ -15,7 +15,7 @@ from memory import ChatMemory
 DEFAULT_SYSTEM_MESSAGE = (
     "You're a helpful AI assistant named LightGPT."
     "Your job is to answer the user's queries as accurately as possible."
-    "If you are unsure of an answer, say 'I don't know'."
+    "If you are unsure of an answer, just say 'I don't know'."
 )
 
 
