@@ -472,7 +472,7 @@ class SelfAttention(Module):
 
         b, t, d = x.size()
 
-        is_autoregressive_phase = t == 0
+        is_autoregressive_phase = t == 1
 
         q, k, v = self.qkv_proj(x).split(self.embedding_dimensions, dim=-1)
 

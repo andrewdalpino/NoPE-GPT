@@ -5,13 +5,11 @@ import torch
 from torch import Tensor
 from torch.nn import Module, ModuleList, Buffer
 
-from model import LightGPT
-
 
 class KVCache(Module):
     """Key-value cache for all layers of the model."""
 
-    def __init__(self, model: LightGPT, batch_size: int, context_length: int):
+    def __init__(self, model: Module, batch_size: int, context_length: int):
         super().__init__()
 
         self.kv_blocks = ModuleList(
