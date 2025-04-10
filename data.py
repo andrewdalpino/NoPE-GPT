@@ -20,6 +20,9 @@ from tqdm import tqdm
 
 CHATML_TEMPLATE = "<|im_start|>{role}\n{message}\n<|im_end|>\n"
 
+PADDING_INDEX = 0
+IGNORE_INDEX = -100
+
 
 class Fineweb(IterableDataset):
     """
@@ -29,7 +32,7 @@ class Fineweb(IterableDataset):
 
     DATASET_NAME = "HuggingFaceFW/fineweb"
 
-    SUBSETS = {"sample-10BT", "sample-100BT", "sample-350BT"}
+    SUBSETS = frozenset({"sample-10BT", "sample-100BT", "sample-350BT"})
 
     def __init__(
         self,
@@ -42,7 +45,7 @@ class Fineweb(IterableDataset):
     ):
         super().__init__()
 
-        if subset != None:
+        if subset is not None:
             if subset not in self.SUBSETS:
                 raise ValueError(f"Invalid subset, {subset} given.")
 
@@ -55,7 +58,7 @@ class Fineweb(IterableDataset):
         if samples_per_epoch < 1:
             raise ValueError(f"Samples per epoch must be greater than 0.")
 
-        dataset_name = f"fineweb-{subset}" if subset != None else "fineweb"
+        dataset_name = f"fineweb-{subset}" if subset is not None else "fineweb"
 
         bin_path = path.join(root_path, f"{dataset_name}-{tokenizer.name}.bin")
 
@@ -143,7 +146,7 @@ class Fineweb(IterableDataset):
             x = x.astype(np.int64)
             y = y.astype(np.int64)
 
-            assert x.shape == y.shape, "Sample / label shape mismatch."
+            assert x.shape == y.shape, "Sample / label shape mismatch"
 
             yield x, y
 
@@ -157,22 +160,24 @@ class SmolTalk(Dataset):
 
     DATASET_NAME = "HuggingFaceTB/smoltalk"
 
-    SUBSETS = {
-        "all",
-        "apigen-80k",
-        "everyday-conversations",
-        "explore-instruct-rewriting",
-        "longalign",
-        "metamathqa-50k",
-        "numina-cot-100k",
-        "openhermes-100k",
-        "self-oss-instruct",
-        "smol-constraints",
-        "smol-magpie-ultra",
-        "smol-rewrite",
-        "smol-summarize",
-        "systemchats-30k",
-    }
+    SUBSETS = frozenset(
+        {
+            "all",
+            "apigen-80k",
+            "everyday-conversations",
+            "explore-instruct-rewriting",
+            "longalign",
+            "metamathqa-50k",
+            "numina-cot-100k",
+            "openhermes-100k",
+            "self-oss-instruct",
+            "smol-constraints",
+            "smol-magpie-ultra",
+            "smol-rewrite",
+            "smol-summarize",
+            "systemchats-30k",
+        }
+    )
 
     def __init__(
         self,
@@ -180,7 +185,6 @@ class SmolTalk(Dataset):
         subset: str = "all",
         max_tokens_per_sample: int = 1024,
         train_on_inputs: bool = False,
-        padding_index: int = -100,
     ):
         super().__init__()
 
@@ -198,14 +202,15 @@ class SmolTalk(Dataset):
 
         self.max_tokens_per_sample = max_tokens_per_sample
         self.train_on_inputs = train_on_inputs
-        self.padding_index = padding_index
 
     def __getitem__(self, index: int):
-        row = self.dataset[index]
+        messages = self.dataset[index]["messages"]
 
-        samples, labels = [], []
+        sample, label = [], []
 
-        for message in row["messages"]:
+        for message in messages:
+            is_end_of_turn = message["role"] == "assistant"
+
             text = CHATML_TEMPLATE.format(
                 role=message["role"],
                 message=message["content"],
@@ -213,22 +218,30 @@ class SmolTalk(Dataset):
 
             tokens = self.tokenizer.encode(text, allowed_special="all")
 
-            tokens.append(self.tokenizer.eot_token)
+            if is_end_of_turn:
+                tokens.append(self.tokenizer.eot_token)
 
-            if len(tokens) > self.max_tokens_per_sample:
+            sample.extend(tokens[:-1])
+
+            if is_end_of_turn or self.train_on_inputs:
+                label.extend(tokens[1:])
+            else:
+                label.extend([IGNORE_INDEX] * (len(tokens) - 1))
+
+            if len(sample) >= self.max_tokens_per_sample:
                 break
 
-            samples.extend(tokens[:-1])
+        sample = sample[: self.max_tokens_per_sample]
+        label = label[: self.max_tokens_per_sample]
 
-            if message["role"] == "assistant" or self.train_on_inputs:
-                labels.extend(tokens[1:])
-            else:
-                labels.extend([self.padding_index] * (len(tokens) - 1))
+        x = torch.tensor(sample, dtype=torch.int64)
+        y = torch.tensor(label, dtype=torch.int64)
 
-        x = torch.tensor(samples, dtype=torch.int64)
-        y = torch.tensor(labels, dtype=torch.int64)
+        assert x.size(0) <= self.max_tokens_per_sample, "Sample too long"
 
-        assert x.shape == y.shape, "Sample / label shape mismatch."
+        assert x.shape == y.shape, "Sample / label shape mismatch"
+
+        assert not torch.all(y == IGNORE_INDEX), "Labels are completely ignored"
 
         return x, y
 
@@ -249,7 +262,6 @@ class UltraFeedback(Dataset):
         split: str = "train",
         max_tokens_per_sample: int = 1024,
         train_on_inputs: bool = False,
-        padding_index: int = -100,
     ):
         super().__init__()
 
@@ -270,14 +282,15 @@ class UltraFeedback(Dataset):
 
         self.max_tokens_per_sample = max_tokens_per_sample
         self.train_on_inputs = train_on_inputs
-        self.padding_index = padding_index
 
     def __getitem__(self, index: int):
-        row = self.dataset[index]
+        messages = self.dataset[index]["messages"]
 
-        samples, labels = [], []
+        sample, label = [], []
 
-        for message in row["messages"]:
+        for message in messages:
+            is_end_of_turn = message["role"] == "assistant"
+
             text = CHATML_TEMPLATE.format(
                 role=message["role"],
                 message=message["content"],
@@ -285,22 +298,30 @@ class UltraFeedback(Dataset):
 
             tokens = self.tokenizer.encode(text, allowed_special="all")
 
-            tokens.append(self.tokenizer.eot_token)
+            if is_end_of_turn:
+                tokens.append(self.tokenizer.eot_token)
 
-            if len(tokens) > self.max_tokens_per_sample:
+            sample.extend(tokens[:-1])
+
+            if is_end_of_turn or self.train_on_inputs:
+                label.extend(tokens[1:])
+            else:
+                label.extend([IGNORE_INDEX] * (len(tokens) - 1))
+
+            if len(sample) >= self.max_tokens_per_sample:
                 break
 
-            samples.extend(tokens[:-1])
+        sample = sample[: self.max_tokens_per_sample]
+        label = label[: self.max_tokens_per_sample]
 
-            if message["role"] == "assistant" or self.train_on_inputs:
-                labels.extend(tokens[1:])
-            else:
-                labels.extend([self.padding_index] * (len(tokens) - 1))
+        x = torch.tensor(sample, dtype=torch.int64)
+        y = torch.tensor(label, dtype=torch.int64)
 
-        x = torch.tensor(samples, dtype=torch.int64)
-        y = torch.tensor(labels, dtype=torch.int64)
+        assert x.size(0) <= self.max_tokens_per_sample, "Sample too long"
 
-        assert x.shape == y.shape, "Sample / label shape mismatch."
+        assert x.shape == y.shape, "Sample / label shape mismatch"
+
+        assert not torch.all(y == IGNORE_INDEX), "Labels are completely ignored"
 
         return x, y
 
@@ -308,27 +329,25 @@ class UltraFeedback(Dataset):
         return len(self.dataset)
 
 
-def left_pad_collate(batch: list, padding_index: int) -> tuple[Tensor, Tensor]:
-    """Custom collate function adds left padding to batched sample/label pairs."""
+def left_pad_collate(batch: list[tuple[Tensor, Tensor]]) -> tuple[Tensor, Tensor]:
+    """Custom collate function adds left padding to batched samples."""
 
-    max_sequence_len = max([len(samples) for samples, _ in batch])
+    samples, labels = zip(*batch)
 
-    x_hat, y_hat = [], []
+    x = pad_sequence(
+        list(samples),
+        batch_first=True,
+        padding_value=PADDING_INDEX,
+        padding_side="left",
+    )
 
-    for samples, labels in batch:
-        pad_length = max_sequence_len - len(samples)
+    y = pad_sequence(
+        list(labels),
+        batch_first=True,
+        padding_value=IGNORE_INDEX,
+        padding_side="left",
+    )
 
-        padding = torch.tensor([padding_index] * pad_length, dtype=torch.int64)
-
-        padded_samples = torch.cat((padding, samples))
-        padded_labels = torch.cat((padding, labels))
-
-        x_hat.append(padded_samples)
-        y_hat.append(padded_labels)
-
-    x = torch.stack(x_hat)
-    y = torch.stack(y_hat)
-
-    assert x.shape == y.shape, "Sample / label shape mismatch."
+    assert x.shape == y.shape, "Batch shape mismatch"
 
     return x, y

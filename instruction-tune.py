@@ -16,7 +16,7 @@ from torch.utils.tensorboard import SummaryWriter
 from torchmetrics.text import Perplexity
 
 from model import LightGPT
-from data import SmolTalk, UltraFeedback, left_pad_collate
+from data import SmolTalk, UltraFeedback, left_pad_collate, IGNORE_INDEX
 
 from tiktoken import Encoding
 
@@ -108,7 +108,7 @@ def main():
 
     amp_context = autocast(device_type=args.device, dtype=dtype)
 
-    if args.seed:
+    if args.seed is not None:
         torch.manual_seed(args.seed)
         random.seed(args.seed)
 
@@ -120,9 +120,8 @@ def main():
 
     tokenizer = checkpoint["tokenizer"]
 
-    padding_index = tokenizer.n_vocab
-    im_start_index = tokenizer.n_vocab + 1
-    im_end_index = tokenizer.n_vocab + 2
+    im_start_index = tokenizer.n_vocab
+    im_end_index = tokenizer.n_vocab + 1
 
     tokenizer = Encoding(
         name=tokenizer.name,
@@ -130,7 +129,6 @@ def main():
         mergeable_ranks=tokenizer._mergeable_ranks,
         special_tokens={
             **tokenizer._special_tokens,
-            "<|pad|>": padding_index,
             "<|im_start|>": im_start_index,
             "<|im_end|>": im_end_index,
         },
@@ -138,7 +136,7 @@ def main():
 
     datasets = []
 
-    for subset in set(args.dataset_subsets):
+    for subset in frozenset(args.dataset_subsets):
         if subset in SmolTalk.SUBSETS:
             datasets.append(
                 SmolTalk(
@@ -146,7 +144,6 @@ def main():
                     subset=subset,
                     max_tokens_per_sample=args.max_tokens_per_sample,
                     train_on_inputs=args.train_on_inputs,
-                    padding_index=padding_index,
                 )
             )
 
@@ -157,27 +154,25 @@ def main():
                     split="train",
                     max_tokens_per_sample=args.max_tokens_per_sample,
                     train_on_inputs=args.train_on_inputs,
-                    padding_index=padding_index,
                 )
             )
 
     dataset = ConcatDataset(datasets)
 
-    training, testing = random_split(dataset, (0.9, 0.1))
-
-    collate = partial(left_pad_collate, padding_index=padding_index)
+    training, testing, _ = random_split(dataset, (0.009, 0.001, 0.99))
 
     train_loader = DataLoader(
         training,
-        collate_fn=collate,
+        collate_fn=left_pad_collate,
         batch_size=args.batch_size,
         pin_memory="cpu" not in args.device,
         shuffle=True,
         num_workers=args.num_dataset_processes,
     )
+
     test_loader = DataLoader(
         testing,
-        collate_fn=collate,
+        collate_fn=left_pad_collate,
         batch_size=args.batch_size,
         pin_memory="cpu" not in args.device,
         shuffle=False,
@@ -203,7 +198,6 @@ def main():
 
     model.freeze_model_parameters()
     model.resize_token_embeddings(tokenizer.n_vocab)
-    model.set_padding_token_index(padding_index)
     model.unfreeze_token_embeddings()
 
     lora_args = {
@@ -243,7 +237,7 @@ def main():
 
     print(f"Model has {model.num_trainable_params:,} trainable parameters")
 
-    perplexity_metric = Perplexity(ignore_index=padding_index).to(args.device)
+    perplexity_metric = Perplexity(ignore_index=IGNORE_INDEX).to(args.device)
 
     print("Instruction-tuning ...")
 

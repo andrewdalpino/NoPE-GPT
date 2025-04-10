@@ -157,7 +157,7 @@ def main():
 
     amp_context = autocast(device_type=args.device, dtype=dtype)
 
-    if args.seed:
+    if args.seed is not None:
         torch.manual_seed(args.seed)
         random.seed(args.seed)
 

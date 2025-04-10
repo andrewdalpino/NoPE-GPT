@@ -34,7 +34,7 @@ def main():
 
     torch.set_float32_matmul_precision("high")
 
-    if args.seed:
+    if args.seed is not None:
         torch.manual_seed(args.seed)
         random.seed(args.seed)
 

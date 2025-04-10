@@ -27,6 +27,8 @@ from transformers import PretrainedConfig, PreTrainedModel
 
 from caching import KVCache, DynamicKVBlock
 
+from data import IGNORE_INDEX
+
 
 class LightGPT(Module):
     """A generative pretrained transformer with no positional embeddings."""
@@ -75,7 +77,7 @@ class LightGPT(Module):
         self.output_norm = RMSNorm(embedding_dimensions)
         self.output_layer = output_layer
 
-        self.loss_function = CrossEntropyLoss()
+        self.loss_function = CrossEntropyLoss(ignore_index=IGNORE_INDEX)
 
         self.vocabulary_size = vocabulary_size
         self.embedding_dimensions = embedding_dimensions
@@ -102,15 +104,6 @@ class LightGPT(Module):
 
         for param in self.token_embeddings.parameters():
             param.requires_grad = True
-
-    def set_padding_token_index(self, padding_index: int) -> None:
-        if padding_index < 0:
-            raise ValueError(
-                f"Padding index must be greater than or equal to 0, {padding_index} given."
-            )
-
-        self.token_embeddings.padding_idx = padding_index
-        self.loss_function.ignore_index = padding_index
 
     @torch.no_grad()
     def resize_token_embeddings(self, vocabulary_size: int) -> None:
@@ -187,7 +180,7 @@ class LightGPT(Module):
                 lora_params = [name for name in module.parametrizations.keys()]
 
                 for name in lora_params:
-                    remove_parametrizations(module, name)
+                    remove_parametrizations(module, name, leave_parametrized=True)
 
     def forward(
         self, x: Tensor, y: Tensor | None = None

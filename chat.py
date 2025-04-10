@@ -43,7 +43,7 @@ def main():
 
     torch.set_float32_matmul_precision("high")
 
-    if args.seed:
+    if args.seed is not None:
         torch.manual_seed(args.seed)
         random.seed(args.seed)
 
@@ -104,6 +104,8 @@ def main():
         instruction = input("Enter a prompt: ")
 
         instruction = CHATML_TEMPLATE.format(role="user", message=instruction)
+
+        instruction += "<|im_start|>assistant\n"
 
         instruction_tokens = tokenizer.encode(instruction, allowed_special="all")
 
