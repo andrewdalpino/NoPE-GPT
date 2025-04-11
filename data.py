@@ -153,9 +153,66 @@ class Fineweb(IterableDataset):
             start += self.tokens_per_sample
 
 
-class SmolTalk(Dataset):
+class ChatMLMixin:
+    """Mixin class for datasets that use the ChatML message format."""
+
+    def __init__(
+        self,
+        tokenizer: Encoding,
+        max_tokens_per_sample: int = 1024,
+        train_on_inputs: bool = False,
+    ):
+        super().__init__()
+
+        if max_tokens_per_sample < 1:
+            raise ValueError(
+                f"Max tokens per sample must be greater than 0, {max_tokens_per_sample} given."
+            )
+
+        self.tokenizer = tokenizer
+        self.max_tokens_per_sample = max_tokens_per_sample
+        self.train_on_inputs = train_on_inputs
+
+    def tokenize_messages(self, messages: list[dict]) -> tuple[Tensor, Tensor]:
+        sample, label = [], []
+
+        for message in messages:
+            is_end_of_turn = message["role"] == "assistant"
+
+            text = CHATML_TEMPLATE.format(
+                role=message["role"],
+                message=message["content"],
+            )
+
+            tokens = self.tokenizer.encode(text, allowed_special="all")
+
+            if is_end_of_turn:
+                tokens.append(self.tokenizer.eot_token)
+
+            sample.extend(tokens[:-1])
+
+            if is_end_of_turn or self.train_on_inputs:
+                label.extend(tokens[1:])
+            else:
+                label.extend([IGNORE_INDEX] * (len(tokens) - 1))
+
+            if len(sample) >= self.max_tokens_per_sample:
+                break
+
+        sample = sample[: self.max_tokens_per_sample]
+        label = label[: self.max_tokens_per_sample]
+
+        x = torch.tensor(sample, dtype=torch.int64)
+        y = torch.tensor(label, dtype=torch.int64)
+
+        assert x.shape == y.shape, "Sample / label shape mismatch"
+
+        return x, y
+
+
+class SmolTalk(ChatMLMixin, Dataset):
     """
-    The SmolTalk dataset by HuggingFace formatted as ChatML messages for instruction tuning.
+    The SmolTalk dataset by HuggingFace formatted as ChatML messages for supervised instruction tuning.
     """
 
     DATASET_NAME = "HuggingFaceTB/smoltalk"
@@ -186,62 +243,17 @@ class SmolTalk(Dataset):
         max_tokens_per_sample: int = 1024,
         train_on_inputs: bool = False,
     ):
-        super().__init__()
+        super().__init__(tokenizer, max_tokens_per_sample, train_on_inputs)
 
         if subset not in self.SUBSETS:
             raise ValueError(f"Invalid subset, {subset} given.")
 
-        if max_tokens_per_sample < 1:
-            raise ValueError(
-                f"Max tokens per sample must be greater than 0, {max_tokens_per_sample} given."
-            )
-
-        self.tokenizer = tokenizer
-
         self.dataset = load_dataset(self.DATASET_NAME, subset, split="train")
-
-        self.max_tokens_per_sample = max_tokens_per_sample
-        self.train_on_inputs = train_on_inputs
 
     def __getitem__(self, index: int):
         messages = self.dataset[index]["messages"]
 
-        sample, label = [], []
-
-        for message in messages:
-            is_end_of_turn = message["role"] == "assistant"
-
-            text = CHATML_TEMPLATE.format(
-                role=message["role"],
-                message=message["content"],
-            )
-
-            tokens = self.tokenizer.encode(text, allowed_special="all")
-
-            if is_end_of_turn:
-                tokens.append(self.tokenizer.eot_token)
-
-            sample.extend(tokens[:-1])
-
-            if is_end_of_turn or self.train_on_inputs:
-                label.extend(tokens[1:])
-            else:
-                label.extend([IGNORE_INDEX] * (len(tokens) - 1))
-
-            if len(sample) >= self.max_tokens_per_sample:
-                break
-
-        sample = sample[: self.max_tokens_per_sample]
-        label = label[: self.max_tokens_per_sample]
-
-        x = torch.tensor(sample, dtype=torch.int64)
-        y = torch.tensor(label, dtype=torch.int64)
-
-        assert x.size(0) <= self.max_tokens_per_sample, "Sample too long"
-
-        assert x.shape == y.shape, "Sample / label shape mismatch"
-
-        assert not torch.all(y == IGNORE_INDEX), "Labels are completely ignored"
+        x, y = self.tokenize_messages(messages)
 
         return x, y
 
@@ -249,7 +261,7 @@ class SmolTalk(Dataset):
         return len(self.dataset)
 
 
-class UltraFeedback(Dataset):
+class UltraFeedback(ChatMLMixin, Dataset):
     """
     The binarized version of the UltraFeedback dataset for human preference alignment via SFT.
     """
@@ -263,65 +275,22 @@ class UltraFeedback(Dataset):
         max_tokens_per_sample: int = 1024,
         train_on_inputs: bool = False,
     ):
-        super().__init__()
+        super().__init__(tokenizer, max_tokens_per_sample, train_on_inputs)
 
         if split not in {"train", "test"}:
             raise ValueError(f"Split must be either train or test, {split} given.")
 
-        if max_tokens_per_sample < 1:
-            raise ValueError(
-                f"Max tokens per sample must be greater than 0, {max_tokens_per_sample} given."
-            )
-
-        self.tokenizer = tokenizer
+        new_dataset = partial(load_dataset, name=self.DATASET_NAME)
 
         if split == "train":
-            self.dataset = load_dataset(self.DATASET_NAME, split="train_sft")
+            self.dataset = new_dataset(split="train_sft")
         else:
-            self.dataset = load_dataset(self.DATASET_NAME, split="test_sft")
-
-        self.max_tokens_per_sample = max_tokens_per_sample
-        self.train_on_inputs = train_on_inputs
+            self.dataset = new_dataset(split="test_sft")
 
     def __getitem__(self, index: int):
         messages = self.dataset[index]["messages"]
 
-        sample, label = [], []
-
-        for message in messages:
-            is_end_of_turn = message["role"] == "assistant"
-
-            text = CHATML_TEMPLATE.format(
-                role=message["role"],
-                message=message["content"],
-            )
-
-            tokens = self.tokenizer.encode(text, allowed_special="all")
-
-            if is_end_of_turn:
-                tokens.append(self.tokenizer.eot_token)
-
-            sample.extend(tokens[:-1])
-
-            if is_end_of_turn or self.train_on_inputs:
-                label.extend(tokens[1:])
-            else:
-                label.extend([IGNORE_INDEX] * (len(tokens) - 1))
-
-            if len(sample) >= self.max_tokens_per_sample:
-                break
-
-        sample = sample[: self.max_tokens_per_sample]
-        label = label[: self.max_tokens_per_sample]
-
-        x = torch.tensor(sample, dtype=torch.int64)
-        y = torch.tensor(label, dtype=torch.int64)
-
-        assert x.size(0) <= self.max_tokens_per_sample, "Sample too long"
-
-        assert x.shape == y.shape, "Sample / label shape mismatch"
-
-        assert not torch.all(y == IGNORE_INDEX), "Labels are completely ignored"
+        x, y = self.tokenize_messages(messages)
 
         return x, y
 
