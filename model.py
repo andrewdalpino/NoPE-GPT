@@ -99,12 +99,6 @@ class LightGPT(Module):
         for param in self.parameters():
             param.requires_grad = False
 
-    def unfreeze_token_embeddings(self) -> None:
-        """Unfreeze the token embeddings to allow for fine-tuning."""
-
-        for param in self.token_embeddings.parameters():
-            param.requires_grad = True
-
     @torch.no_grad()
     def resize_token_embeddings(self, vocabulary_size: int) -> None:
         """Resize the token embeddings to accommodate a new vocabulary size."""
@@ -137,8 +131,13 @@ class LightGPT(Module):
 
         self.vocabulary_size = vocabulary_size
 
+    def unfreeze_token_embeddings(self) -> None:
+        """Unfreeze the token embeddings to allow for fine-tuning."""
+
+        self.token_embeddings.weight.requires_grad = True
+
     def add_lora_parameters(self, rank: int, alpha: float, dropout: float) -> None:
-        """Reparameterize the weights of the model using LoRA."""
+        """Reparameterize the weights of the model using LoRA adapters."""
 
         for module in self.body:
             register_parametrization(

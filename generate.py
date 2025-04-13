@@ -68,7 +68,7 @@ def main():
     while True:
         prompt = input("Enter a prompt: ")
 
-        prompt = tokenizer.encode_ordinary(prompt)
+        prompt = tokenizer.encode(prompt, allowed_special="all")
 
         prompt = torch.tensor(prompt, dtype=torch.int64, device=args.device)
 

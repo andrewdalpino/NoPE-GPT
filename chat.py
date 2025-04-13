@@ -3,19 +3,19 @@ import random
 from os import path
 from functools import partial
 from argparse import ArgumentParser
+from itertools import chain
 
 import torch
 
 from torch.cuda import is_available as cuda_is_available
 
 from model import LightGPT
-from data import CHATML_TEMPLATE
+from data import CHATML_TEMPLATE, RESPONSE_HEADER
 from memory import ChatMemory
 
 DEFAULT_SYSTEM_MESSAGE = (
-    "You're a helpful AI assistant named LightGPT."
-    "Your job is to answer the user's queries as accurately as possible."
-    "If you are unsure of an answer, just say 'I don't know'."
+    "You're a helpful AI assistant named LightGPT. "
+    "Your job is to chat and answer questions as accurately as possible. "
 )
 
 
@@ -30,7 +30,7 @@ def main():
     )
     parser.add_argument("--max_tokens", default=500, type=int)
     parser.add_argument("--context_length", default=1024, type=int)
-    parser.add_argument("--temperature", default=1.0, type=float)
+    parser.add_argument("--temperature", default=0.7, type=float)
     parser.add_argument("--top_k", default=500, type=int)
     parser.add_argument("--top_p", default=0.9, type=float)
     parser.add_argument("--device", default="cuda", type=str)
@@ -65,6 +65,11 @@ def main():
 
     tokenizer = checkpoint["tokenizer"]
 
+    im_end_token = tokenizer.encode_single_token("<|im_end|>")
+    eot_token = tokenizer.eot_token
+
+    stop_tokens = frozenset({im_end_token, eot_token})
+
     model.resize_token_embeddings(tokenizer.n_vocab)
     model.token_embeddings.load_state_dict(checkpoint["token_embeddings"])
 
@@ -87,6 +92,10 @@ def main():
 
     system_message_tokens = tokenizer.encode(system_message, allowed_special="all")
 
+    response_header_tokens = tokenizer.encode(RESPONSE_HEADER, allowed_special="all")
+
+    newline_token = tokenizer.encode_single_token("\n")
+
     max_message_history_length = args.context_length - len(system_message_tokens)
 
     memory = ChatMemory(max_message_history_length)
@@ -105,31 +114,34 @@ def main():
 
         instruction = CHATML_TEMPLATE.format(role="user", message=instruction)
 
-        instruction += "<|im_start|>assistant\n"
-
         instruction_tokens = tokenizer.encode(instruction, allowed_special="all")
+
+        prompt = chain(
+            system_message_tokens,
+            memory.get_history(),
+            instruction_tokens,
+            response_header_tokens,
+        )
+
+        prompt = torch.tensor(list(prompt), dtype=torch.int64, device=args.device)
 
         memory.add_message(instruction_tokens)
 
-        prompt = system_message_tokens
-
-        prompt.extend(memory.get_history())
-
-        prompt = torch.tensor(prompt, dtype=torch.int64, device=args.device)
-
-        message_tokens = []
+        message_tokens = response_header_tokens
 
         for token in generate(prompt):
+            message_tokens.append(token)
+
+            if token in stop_tokens:
+                break
+
             out = tokenizer.decode_single_token_bytes(token).decode(
                 "utf-8", errors="replace"
             )
 
             print(out, end="", flush=True)
 
-            message_tokens.append(token)
-
-            if token == tokenizer.eot_token:
-                break
+        message_tokens.append(newline_token)
 
         print("\n")
 

@@ -2,6 +2,7 @@ import random
 
 from os import path, remove as delete_file
 from functools import partial
+from copy import deepcopy
 
 from datasets import load_dataset
 
@@ -17,17 +18,17 @@ from torch.nn.utils.rnn import pad_sequence
 
 from tqdm import tqdm
 
-
 CHATML_TEMPLATE = "<|im_start|>{role}\n{message}\n<|im_end|>\n"
 
-PADDING_INDEX = 0
+RESPONSE_HEADER = "<|im_start|>assistant\n"
+
 IGNORE_INDEX = -100
 
 
 class Fineweb(IterableDataset):
     """
-    The Fineweb dataset by HuggingFace, tokenized and stored as a memory map for fast
-    access during pre-training.
+    The Fineweb dataset by HuggingFace, tokenized, and stored as a memory map for fast access
+    during pre-training. Endlessly emits random chunks of tokens from the corpus in infinitum.
     """
 
     DATASET_NAME = "HuggingFaceFW/fineweb"
@@ -153,8 +154,8 @@ class Fineweb(IterableDataset):
             start += self.tokens_per_sample
 
 
-class ChatMLMixin:
-    """Mixin class for datasets that use the ChatML message format."""
+class ChatMLTokenizer:
+    """Tokenizer for multi-turn ChatML-formatted messages."""
 
     def __init__(
         self,
@@ -162,22 +163,28 @@ class ChatMLMixin:
         max_tokens_per_sample: int = 1024,
         train_on_inputs: bool = False,
     ):
-        super().__init__()
-
         if max_tokens_per_sample < 1:
             raise ValueError(
                 f"Max tokens per sample must be greater than 0, {max_tokens_per_sample} given."
             )
 
+        response_header_tokens = tokenizer.encode(
+            RESPONSE_HEADER, allowed_special="all"
+        )
+        response_header_length = len(response_header_tokens)
+
         self.tokenizer = tokenizer
         self.max_tokens_per_sample = max_tokens_per_sample
         self.train_on_inputs = train_on_inputs
+        self.response_header_length = response_header_length
 
     def tokenize_messages(self, messages: list[dict]) -> tuple[Tensor, Tensor]:
-        sample, label = [], []
+        sample, labels = [], []
+
+        total_tokens = 0
 
         for message in messages:
-            is_end_of_turn = message["role"] == "assistant"
+            is_completion = message["role"] == "assistant"
 
             text = CHATML_TEMPLATE.format(
                 role=message["role"],
@@ -186,31 +193,40 @@ class ChatMLMixin:
 
             tokens = self.tokenizer.encode(text, allowed_special="all")
 
-            if is_end_of_turn:
-                tokens.append(self.tokenizer.eot_token)
+            total_tokens += len(tokens)
 
-            sample.extend(tokens[:-1])
+            sample.extend(tokens)
 
-            if is_end_of_turn or self.train_on_inputs:
-                label.extend(tokens[1:])
+            if self.train_on_inputs:
+                labels.extend(tokens)
+
+                continue
+
+            if is_completion:
+                labels.extend([IGNORE_INDEX] * self.response_header_length)
+
+                labels.extend(tokens[self.response_header_length :])
             else:
-                label.extend([IGNORE_INDEX] * (len(tokens) - 1))
+                labels.extend([IGNORE_INDEX] * len(tokens))
 
-            if len(sample) >= self.max_tokens_per_sample:
+            if total_tokens > self.max_tokens_per_sample:
                 break
 
+        sample = sample[:-1]
+        labels = labels[1:]
+
         sample = sample[: self.max_tokens_per_sample]
-        label = label[: self.max_tokens_per_sample]
+        labels = labels[: self.max_tokens_per_sample]
 
         x = torch.tensor(sample, dtype=torch.int64)
-        y = torch.tensor(label, dtype=torch.int64)
+        y = torch.tensor(labels, dtype=torch.int64)
 
         assert x.shape == y.shape, "Sample / label shape mismatch"
 
         return x, y
 
 
-class SmolTalk(ChatMLMixin, Dataset):
+class SmolTalk(Dataset):
     """
     The SmolTalk dataset by HuggingFace formatted as ChatML messages for supervised instruction tuning.
     """
@@ -238,22 +254,22 @@ class SmolTalk(ChatMLMixin, Dataset):
 
     def __init__(
         self,
-        tokenizer: Encoding,
+        tokenizer: ChatMLTokenizer,
         subset: str = "all",
-        max_tokens_per_sample: int = 1024,
-        train_on_inputs: bool = False,
     ):
-        super().__init__(tokenizer, max_tokens_per_sample, train_on_inputs)
+        super().__init__()
 
         if subset not in self.SUBSETS:
             raise ValueError(f"Invalid subset, {subset} given.")
+
+        self.tokenizer = tokenizer
 
         self.dataset = load_dataset(self.DATASET_NAME, subset, split="train")
 
     def __getitem__(self, index: int):
         messages = self.dataset[index]["messages"]
 
-        x, y = self.tokenize_messages(messages)
+        x, y = self.tokenizer.tokenize_messages(messages)
 
         return x, y
 
@@ -261,7 +277,7 @@ class SmolTalk(ChatMLMixin, Dataset):
         return len(self.dataset)
 
 
-class UltraFeedback(ChatMLMixin, Dataset):
+class UltraFeedbackSFT(Dataset):
     """
     The binarized version of the UltraFeedback dataset for human preference alignment via SFT.
     """
@@ -270,15 +286,15 @@ class UltraFeedback(ChatMLMixin, Dataset):
 
     def __init__(
         self,
-        tokenizer: Encoding,
+        tokenizer: ChatMLTokenizer,
         split: str = "train",
-        max_tokens_per_sample: int = 1024,
-        train_on_inputs: bool = False,
     ):
-        super().__init__(tokenizer, max_tokens_per_sample, train_on_inputs)
+        super().__init__()
 
         if split not in {"train", "test"}:
             raise ValueError(f"Split must be either train or test, {split} given.")
+
+        self.tokenizer = tokenizer
 
         new_dataset = partial(load_dataset, name=self.DATASET_NAME)
 
@@ -290,7 +306,7 @@ class UltraFeedback(ChatMLMixin, Dataset):
     def __getitem__(self, index: int):
         messages = self.dataset[index]["messages"]
 
-        x, y = self.tokenize_messages(messages)
+        x, y = self.tokenizer.tokenize_messages(messages)
 
         return x, y
 
@@ -298,23 +314,25 @@ class UltraFeedback(ChatMLMixin, Dataset):
         return len(self.dataset)
 
 
-def left_pad_collate(batch: list[tuple[Tensor, Tensor]]) -> tuple[Tensor, Tensor]:
-    """Custom collate function adds left padding to batched samples."""
+def pad_collate(
+    batch: list[tuple[Tensor, Tensor]], padding_side: str, padding_index: int
+) -> tuple[Tensor, Tensor]:
+    """Custom collate function adds padding to batched samples."""
 
     samples, labels = zip(*batch)
 
     x = pad_sequence(
         list(samples),
         batch_first=True,
-        padding_value=PADDING_INDEX,
-        padding_side="left",
+        padding_value=padding_index,
+        padding_side=padding_side,
     )
 
     y = pad_sequence(
         list(labels),
         batch_first=True,
         padding_value=IGNORE_INDEX,
-        padding_side="left",
+        padding_side=padding_side,
     )
 
     assert x.shape == y.shape, "Batch shape mismatch"

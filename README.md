@@ -148,6 +148,7 @@ python instruction-tune.py --rank=4 --alpha=0.8 --dropout=0.1
 | --num_epochs | 3 | int | The number of epochs to train for. |
 | --activation_checkpointing | False | bool | Should we use activation checkpointing? This will reduce drastically memory utilization during training at the cost of needing to recompute the forward pass. |
 | --eval_interval | 1 | int | Evaluate the model after this many epochs on the testing set. |
+| --eval_ratio | 0.1 | float | The proportion of testing samples to validate the model on. |
 | --checkpoint_interval | 1 | int | Save the model parameters to disk every this many epochs. |
 | --checkpoint_path | "./checkpoints/instruct.pt" | string | The path to the LoRA checkpoint. |
 | --resume | False | bool | Should we resume training from the last checkpoint? |
@@ -208,7 +209,7 @@ python chat.py --temperature=0.8 --top_k=300
 | --lora_path | None | string | The path to the LoRA checkpoint. |
 | --max_tokens | 2000 | int | The maximum number of tokens that the model should generate per sample. |
 | --context_length | 1024 | int | The number of tokens to keep within the context window of the current prediction. |
-| --temperature | 1.0 | float | The amount of regularization applied to the candidate token probabilities. |
+| --temperature | 0.7 | float | The amount of regularization applied to the candidate token probabilities. |
 | --top_k | 500 | int | Only sample from this many candidate tokens with the highest probabilities. |
 | --top_p | 0.9 | float | Of the `top_k` tokens, drop all but the `top_p` portion of the cumulative probability distribution. |
 | --device | "cuda" | string | The device to run the computation on. |

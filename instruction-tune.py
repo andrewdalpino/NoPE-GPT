@@ -16,7 +16,7 @@ from torch.utils.tensorboard import SummaryWriter
 from torchmetrics.text import Perplexity
 
 from model import LightGPT
-from data import SmolTalk, UltraFeedback, left_pad_collate, IGNORE_INDEX
+from data import ChatMLTokenizer, SmolTalk, UltraFeedbackSFT, pad_collate, IGNORE_INDEX
 
 from tiktoken import Encoding
 
@@ -36,7 +36,7 @@ def main():
     parser.add_argument(
         "--dataset_subsets", default=["all", "ultra-feedback"], type=csv_list
     )
-    parser.add_argument("--num_dataset_processes", default=2, type=int)
+    parser.add_argument("--num_dataset_processes", default=1, type=int)
     parser.add_argument("--max_tokens_per_sample", default=1048, type=int)
     parser.add_argument("--train_on_inputs", action="store_true")
     parser.add_argument("--batch_size", default=2, type=int)
@@ -44,13 +44,14 @@ def main():
     parser.add_argument("--learning_rate", default=5e-4, type=float)
     parser.add_argument("--rms_decay", default=-0.8, type=float)
     parser.add_argument("--low_memory_optimizer", action="store_true")
-    parser.add_argument("--max_gradient_norm", default=1.0, type=float)
+    parser.add_argument("--max_gradient_norm", default=10.0, type=float)
     parser.add_argument("--num_epochs", default=3, type=int)
     parser.add_argument("--rank", default=8, type=int)
     parser.add_argument("--alpha", default=1.0, type=float)
     parser.add_argument("--dropout", default=0.05, type=float)
     parser.add_argument("--activation_checkpointing", action="store_true")
     parser.add_argument("--eval_interval", default=1, type=int)
+    parser.add_argument("--eval_ratio", default=0.1, type=float)
     parser.add_argument("--checkpoint_interval", default=1, type=int)
     parser.add_argument(
         "--checkpoint_path", default="./checkpoints/instruct.pt", type=str
@@ -88,6 +89,11 @@ def main():
     if args.eval_interval < 1:
         raise ValueError(
             f"Eval interval must be greater than 0, {args.eval_interval} given."
+        )
+
+    if args.eval_ratio < 0 or args.eval_ratio > 1:
+        raise ValueError(
+            f"Eval ratio must be between 0 and 1, {args.eval_ratio} given."
         )
 
     if args.checkpoint_interval < 1:
@@ -134,45 +140,42 @@ def main():
         },
     )
 
+    chatml_tokenizer = ChatMLTokenizer(
+        tokenizer,
+        max_tokens_per_sample=args.max_tokens_per_sample,
+        train_on_inputs=args.train_on_inputs,
+    )
+
     datasets = []
 
     for subset in frozenset(args.dataset_subsets):
         if subset in SmolTalk.SUBSETS:
-            datasets.append(
-                SmolTalk(
-                    tokenizer,
-                    subset=subset,
-                    max_tokens_per_sample=args.max_tokens_per_sample,
-                    train_on_inputs=args.train_on_inputs,
-                )
-            )
+            datasets.append(SmolTalk(chatml_tokenizer, subset=subset))
 
         if subset == "ultra-feedback":
-            datasets.append(
-                UltraFeedback(
-                    tokenizer,
-                    split="train",
-                    max_tokens_per_sample=args.max_tokens_per_sample,
-                    train_on_inputs=args.train_on_inputs,
-                )
-            )
+            datasets.append(UltraFeedbackSFT(chatml_tokenizer, split="train"))
 
     dataset = ConcatDataset(datasets)
 
-    training, testing, _ = random_split(dataset, (0.009, 0.001, 0.99))
+    training, testing = random_split(dataset, (1.0 - args.eval_ratio, args.eval_ratio))
+
+    right_pad_collate = partial(
+        pad_collate, padding_side="right", padding_index=tokenizer.eot_token
+    )
 
     train_loader = DataLoader(
         training,
-        collate_fn=left_pad_collate,
+        collate_fn=right_pad_collate,
         batch_size=args.batch_size,
         pin_memory="cpu" not in args.device,
         shuffle=True,
         num_workers=args.num_dataset_processes,
+        drop_last=True,
     )
 
     test_loader = DataLoader(
         testing,
-        collate_fn=left_pad_collate,
+        collate_fn=right_pad_collate,
         batch_size=args.batch_size,
         pin_memory="cpu" not in args.device,
         shuffle=False,
@@ -182,9 +185,6 @@ def main():
     model_args = checkpoint["model_args"]
 
     model = LightGPT(**model_args)
-
-    if args.activation_checkpointing:
-        model.enable_activation_checkpointing()
 
     state_dict = checkpoint["model"]
 
@@ -207,6 +207,9 @@ def main():
     }
 
     model.add_lora_parameters(**lora_args)
+
+    if args.activation_checkpointing:
+        model.enable_activation_checkpointing()
 
     model = model.to(args.device)
 
@@ -252,7 +255,7 @@ def main():
             y = y.to(args.device, non_blocking=True)
 
             with amp_context:
-                y_pred, loss = model(x, y)
+                y_pred, loss = model.forward(x, y)
 
                 scaled_loss = loss / args.gradient_accumulation_steps
 
