@@ -5,7 +5,7 @@ from argparse import ArgumentParser
 
 import torch
 
-from torch.utils.data import ConcatDataset, DataLoader
+from torch.utils.data import ConcatDataset, Subset, DataLoader
 from torch.optim import Adafactor
 from torch.amp import autocast
 from torch.cuda import is_available as cuda_is_available, is_bf16_supported
@@ -37,6 +37,7 @@ def main():
         "--dataset_subsets", default=["all", "ultra-feedback"], type=csv_list
     )
     parser.add_argument("--num_dataset_processes", default=1, type=int)
+    parser.add_argument("--sample_ratio", default=1.0, type=float)
     parser.add_argument("--max_tokens_per_sample", default=1048, type=int)
     parser.add_argument("--train_on_inputs", action="store_true")
     parser.add_argument("--batch_size", default=2, type=int)
@@ -156,6 +157,12 @@ def main():
             datasets.append(UltraFeedbackSFT(chatml_tokenizer, split="train"))
 
     dataset = ConcatDataset(datasets)
+
+    samples_per_epoch = int(args.sample_ratio * len(dataset))
+
+    random_indices = random.sample(range(0, len(dataset)), samples_per_epoch)
+
+    dataset = Subset(dataset, random_indices)
 
     training, testing = random_split(dataset, (1.0 - args.eval_ratio, args.eval_ratio))
 

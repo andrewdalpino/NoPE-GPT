@@ -1,4 +1,5 @@
 import random
+import warnings
 
 from os import path, remove as delete_file
 from functools import partial
@@ -171,6 +172,7 @@ class ChatMLTokenizer:
         response_header_tokens = tokenizer.encode(
             RESPONSE_HEADER, allowed_special="all"
         )
+        
         response_header_length = len(response_header_tokens)
 
         self.tokenizer = tokenizer
@@ -181,7 +183,7 @@ class ChatMLTokenizer:
     def tokenize_messages(self, messages: list[dict]) -> tuple[Tensor, Tensor]:
         sample, labels = [], []
 
-        total_tokens = 0
+        total_tokens, has_completion = 0, False
 
         for message in messages:
             is_completion = message["role"] == "assistant"
@@ -206,17 +208,25 @@ class ChatMLTokenizer:
                 labels.extend([IGNORE_INDEX] * self.response_header_length)
 
                 labels.extend(tokens[self.response_header_length :])
+
+                has_completion = True
             else:
                 labels.extend([IGNORE_INDEX] * len(tokens))
 
             if total_tokens > self.max_tokens_per_sample:
                 break
 
+        if not self.train_on_inputs and not has_completion:
+            warnings.warn(
+                "No completion found in sample, training may be unstable. "
+                "Increase max_tokens_per_sample or train on inputs."
+            )
+
+        sample = sample[: self.max_tokens_per_sample + 1]
+        labels = labels[: self.max_tokens_per_sample + 1]
+
         sample = sample[:-1]
         labels = labels[1:]
-
-        sample = sample[: self.max_tokens_per_sample]
-        labels = labels[: self.max_tokens_per_sample]
 
         x = torch.tensor(sample, dtype=torch.int64)
         y = torch.tensor(labels, dtype=torch.int64)
