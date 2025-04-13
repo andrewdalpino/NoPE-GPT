@@ -72,6 +72,7 @@ class DynamicKVBlock(Module):
 
         self.context_length = context_length
 
+    @torch.no_grad()
     def update(self, k: Tensor, v: Tensor) -> tuple[Tensor, Tensor]:
         """Update the cache with a new key-value pairs.
         Args:
@@ -84,11 +85,11 @@ class DynamicKVBlock(Module):
         k_cache = torch.cat((self.k_cache, k), dim=2)
         v_cache = torch.cat((self.v_cache, v), dim=2)
 
-        if self.k_cache.size(2) > self.context_length:
-            k_cache = self.k_cache[:, :, -self.context_length :]
-            v_cache = self.v_cache[:, :, -self.context_length :]
+        if k_cache.size(2) > self.context_length:
+            k_cache = k_cache[:, :, -self.context_length :]
+            v_cache = v_cache[:, :, -self.context_length :]
 
         self.k_cache.data = k_cache
         self.v_cache.data = v_cache
 
-        return self.k_cache, self.v_cache
+        return k_cache, v_cache

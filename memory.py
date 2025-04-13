@@ -5,14 +5,24 @@ from itertools import chain
 from typing import Iterator, Deque
 
 
-class ChatMemory:
+class ShortTermMemory:
     """A simple in-memory short-term memory store for interactive chat sessions."""
 
-    def __init__(self, max_length: int):
+    def __init__(self, max_tokens: int):
         self.messages: Deque[list[int]] = deque()
-        self.total_length = 0
 
-        self.max_length = max_length
+        self.max_tokens = max_tokens
+        self.total_tokens = 0
+
+    @property
+    def utilization(self) -> float:
+        """Calculate the current memory utilization.
+
+        Returns:
+            float: The percentage of memory used.
+        """
+
+        return self.total_tokens / self.max_tokens
 
     def add_message(self, message: list[int]):
         """Add a message to the chat history.
@@ -23,12 +33,12 @@ class ChatMemory:
 
         self.messages.append(message)
 
-        self.total_length += len(message)
+        self.total_tokens += len(message)
 
-        while self.total_length >= self.max_length:
+        while self.total_tokens > self.max_tokens:
             old_message = self.messages.popleft()
 
-            self.total_length -= len(old_message)
+            self.total_tokens -= len(old_message)
 
     def get_history(self) -> Iterator[int]:
         """Return the most recent chat history.

@@ -39,7 +39,6 @@ def main():
     parser.add_argument("--num_dataset_processes", default=1, type=int)
     parser.add_argument("--sample_ratio", default=1.0, type=float)
     parser.add_argument("--max_tokens_per_sample", default=1048, type=int)
-    parser.add_argument("--train_on_inputs", action="store_true")
     parser.add_argument("--batch_size", default=2, type=int)
     parser.add_argument("--gradient_accumulation_steps", default=64, type=int)
     parser.add_argument("--learning_rate", default=5e-4, type=float)
@@ -144,7 +143,6 @@ def main():
     chatml_tokenizer = ChatMLTokenizer(
         tokenizer,
         max_tokens_per_sample=args.max_tokens_per_sample,
-        train_on_inputs=args.train_on_inputs,
     )
 
     datasets = []
@@ -160,7 +158,7 @@ def main():
 
     samples_per_epoch = int(args.sample_ratio * len(dataset))
 
-    random_indices = random.sample(range(0, len(dataset)), samples_per_epoch)
+    random_indices = random.sample(range(len(dataset)), samples_per_epoch)
 
     dataset = Subset(dataset, random_indices)
 
@@ -170,24 +168,16 @@ def main():
         pad_collate, padding_side="right", padding_index=tokenizer.eot_token
     )
 
-    train_loader = DataLoader(
-        training,
+    new_dataloader = partial(
+        DataLoader,
         collate_fn=right_pad_collate,
         batch_size=args.batch_size,
         pin_memory="cpu" not in args.device,
-        shuffle=True,
         num_workers=args.num_dataset_processes,
-        drop_last=True,
     )
 
-    test_loader = DataLoader(
-        testing,
-        collate_fn=right_pad_collate,
-        batch_size=args.batch_size,
-        pin_memory="cpu" not in args.device,
-        shuffle=False,
-        num_workers=args.num_dataset_processes,
-    )
+    train_loader = new_dataloader(training, shuffle=True, drop_last=True)
+    test_loader = new_dataloader(testing, shuffle=False)
 
     model_args = checkpoint["model_args"]
 
@@ -236,7 +226,6 @@ def main():
 
         model.token_embeddings.load_state_dict(checkpoint["token_embeddings"])
         model.load_state_dict(checkpoint["lora"], strict=False)
-
         optimizer.load_state_dict(checkpoint["optimizer"])
 
         starting_epoch += checkpoint["epoch"]
@@ -301,7 +290,7 @@ def main():
                 y = y.to(args.device, non_blocking=True)
 
                 with torch.no_grad():
-                    y_pred, _ = model(x)
+                    y_pred, _ = model.forward(x, None)
 
                 perplexity_metric.update(y_pred, y)
 

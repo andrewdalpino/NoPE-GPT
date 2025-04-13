@@ -3,7 +3,6 @@ import warnings
 
 from os import path, remove as delete_file
 from functools import partial
-from copy import deepcopy
 
 from datasets import load_dataset
 
@@ -162,7 +161,6 @@ class ChatMLTokenizer:
         self,
         tokenizer: Encoding,
         max_tokens_per_sample: int = 1024,
-        train_on_inputs: bool = False,
     ):
         if max_tokens_per_sample < 1:
             raise ValueError(
@@ -172,12 +170,11 @@ class ChatMLTokenizer:
         response_header_tokens = tokenizer.encode(
             RESPONSE_HEADER, allowed_special="all"
         )
-        
+
         response_header_length = len(response_header_tokens)
 
         self.tokenizer = tokenizer
         self.max_tokens_per_sample = max_tokens_per_sample
-        self.train_on_inputs = train_on_inputs
         self.response_header_length = response_header_length
 
     def tokenize_messages(self, messages: list[dict]) -> tuple[Tensor, Tensor]:
@@ -199,11 +196,6 @@ class ChatMLTokenizer:
 
             sample.extend(tokens)
 
-            if self.train_on_inputs:
-                labels.extend(tokens)
-
-                continue
-
             if is_completion:
                 labels.extend([IGNORE_INDEX] * self.response_header_length)
 
@@ -216,10 +208,10 @@ class ChatMLTokenizer:
             if total_tokens > self.max_tokens_per_sample:
                 break
 
-        if not self.train_on_inputs and not has_completion:
+        if not has_completion:
             warnings.warn(
                 "No completion found in sample, training may be unstable. "
-                "Increase max_tokens_per_sample or train on inputs."
+                "Increase max_tokens_per_sample."
             )
 
         sample = sample[: self.max_tokens_per_sample + 1]

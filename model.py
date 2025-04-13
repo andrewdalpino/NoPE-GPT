@@ -179,7 +179,7 @@ class LightGPT(Module):
                 lora_params = [name for name in module.parametrizations.keys()]
 
                 for name in lora_params:
-                    remove_parametrizations(module, name, leave_parametrized=True)
+                    remove_parametrizations(module, name)
 
     def forward(
         self, x: Tensor, y: Tensor | None = None
@@ -349,7 +349,7 @@ class LightGPTHuggingFaceModel(PreTrainedModel):
 
 
 class DecoderBlock(Module):
-    """Decoder block with multihead attention, multilayer perceptron, and residual connections."""
+    """Decoder block with multi-head attention, multilayer perceptron, and residual connections."""
 
     def __init__(
         self,
@@ -518,7 +518,7 @@ class MLP(Module):
 
 
 class LoRA(Module):
-    """Rank decomposition transformation."""
+    """Low rank weight decomposition transformation."""
 
     @classmethod
     def from_linear(

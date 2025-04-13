@@ -134,8 +134,8 @@ python instruction-tune.py --rank=4 --alpha=0.8 --dropout=0.1
 |---|---|---|---|
 | --base_model_path | "./checkpoints/checkpoint.pt" | string | The path to the base checkpoint on disk. |
 | --dataset_subset | "all,ultra-feedback" | str | A comma-separated list of subsets of the dataset to train on. Options are `all`, `apigen-80k`, `everyday-conversations`, `explore-instruct-rewriting`, `longalign`, `metamathqa-50k`, `numina-cot-100k`, `openhermes-100k`, `self-oss-instruct`, `smol-constraints`, `smol-magpie-ultra`, `smol-rewrite`, `smol-summarize`, `systemchats-30k`, and `ultra-feedback`. |
+| --sample_ratio | 1.0 | float | The ratio of random samples to pick from the corpus. |
 | --max_tokens_per_sample | 1024 | int | The maximum number of tokens to pack into a single training sequence. |
-| --train_on_inputs | False | bool | Should we mask the system and user parts of the training sequences i.e. only train on the supervised output? |
 | --batch_size | 2 | int | The number of samples to pass through the network at a time. |
 | --gradient_accumulation_steps | 64 | int | The number of batches to pass through the network before updating the weights. |
 | --learning_rate | 5e-4 | float | The learning rate of the Adafactor optimizer. |

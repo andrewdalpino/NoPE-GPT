@@ -235,6 +235,7 @@ def main():
 
         model.load_state_dict(checkpoint["model"])
         optimizer.load_state_dict(checkpoint["optimizer"])
+
         starting_epoch += checkpoint["epoch"]
 
         model = model.to(args.device)

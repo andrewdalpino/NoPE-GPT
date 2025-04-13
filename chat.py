@@ -11,7 +11,7 @@ from torch.cuda import is_available as cuda_is_available
 
 from model import LightGPT
 from data import CHATML_TEMPLATE, RESPONSE_HEADER
-from memory import ChatMemory
+from memory import ShortTermMemory
 
 DEFAULT_SYSTEM_MESSAGE = (
     "You're a helpful AI assistant named LightGPT. "
@@ -90,15 +90,15 @@ def main():
 
     system_message = CHATML_TEMPLATE.format(role="system", message=system_message)
 
-    system_message_tokens = tokenizer.encode(system_message, allowed_special="all")
+    system_message = tokenizer.encode(system_message, allowed_special="all")
 
-    response_header_tokens = tokenizer.encode(RESPONSE_HEADER, allowed_special="all")
+    response_header = tokenizer.encode(RESPONSE_HEADER, allowed_special="all")
 
     newline_token = tokenizer.encode_single_token("\n")
 
-    max_message_history_length = args.context_length - len(system_message_tokens)
+    max_token_history = args.context_length - len(system_message)
 
-    memory = ChatMemory(max_message_history_length)
+    memory = ShortTermMemory(max_tokens=max_token_history)
 
     generate = partial(
         model.generate,
@@ -110,27 +110,31 @@ def main():
     )
 
     while True:
+        print(f"Short-term memory utilization: {memory.utilization:.2%}")
+
         instruction = input("Enter a prompt: ")
 
-        instruction = CHATML_TEMPLATE.format(role="user", message=instruction)
+        instruction_message = CHATML_TEMPLATE.format(role="user", message=instruction)
 
-        instruction_tokens = tokenizer.encode(instruction, allowed_special="all")
+        instruction_message = tokenizer.encode(
+            instruction_message, allowed_special="all"
+        )
 
         prompt = chain(
-            system_message_tokens,
+            system_message,
             memory.get_history(),
-            instruction_tokens,
-            response_header_tokens,
+            instruction_message,
+            response_header,
         )
 
         prompt = torch.tensor(list(prompt), dtype=torch.int64, device=args.device)
 
-        memory.add_message(instruction_tokens)
+        memory.add_message(instruction_message)
 
-        message_tokens = response_header_tokens
+        response_message = response_header
 
         for token in generate(prompt):
-            message_tokens.append(token)
+            response_message.append(token)
 
             if token in stop_tokens:
                 break
@@ -141,14 +145,14 @@ def main():
 
             print(out, end="", flush=True)
 
-        message_tokens.append(newline_token)
+        response_message.append(newline_token)
 
         print("\n")
 
         if "y" not in input("Go again? (yes|no): ").lower():
             break
 
-        memory.add_message(message_tokens)
+        memory.add_message(response_message)
 
 
 if __name__ == "__main__":
