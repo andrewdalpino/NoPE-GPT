@@ -211,7 +211,7 @@ class ChatMLTokenizer:
         if not has_completion:
             warnings.warn(
                 "No completion found in sample, training may be unstable. "
-                "Increase max_tokens_per_sample."
+                "Increase max_tokens_per_sample to avoid this warning."
             )
 
         sample = sample[: self.max_tokens_per_sample + 1]

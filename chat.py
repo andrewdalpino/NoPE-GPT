@@ -4,6 +4,7 @@ from os import path
 from functools import partial
 from argparse import ArgumentParser
 from itertools import chain
+import copy
 
 import torch
 
@@ -131,7 +132,7 @@ def main():
 
         memory.add_message(instruction_message)
 
-        response_message = response_header
+        response_message = copy.copy(response_header)
 
         for token in generate(prompt):
             response_message.append(token)

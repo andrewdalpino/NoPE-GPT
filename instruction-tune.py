@@ -41,7 +41,7 @@ def main():
     parser.add_argument("--max_tokens_per_sample", default=1048, type=int)
     parser.add_argument("--batch_size", default=2, type=int)
     parser.add_argument("--gradient_accumulation_steps", default=64, type=int)
-    parser.add_argument("--learning_rate", default=5e-4, type=float)
+    parser.add_argument("--learning_rate", default=1e-2, type=float)
     parser.add_argument("--rms_decay", default=-0.8, type=float)
     parser.add_argument("--low_memory_optimizer", action="store_true")
     parser.add_argument("--max_gradient_norm", default=10.0, type=float)
