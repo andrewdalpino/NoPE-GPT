@@ -287,8 +287,9 @@ class LightGPT(Module):
             offset = torch.multinomial(probabilities, num_samples=1).squeeze()
 
             next_token = indices[offset]
+            probability = probabilities[offset]
 
-            yield int(next_token.item())
+            yield (int(next_token.item()), probability.item())
 
             num_tokens += 1
 

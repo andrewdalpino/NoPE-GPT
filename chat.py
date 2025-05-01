@@ -30,6 +30,7 @@ def main():
         "--lora_checkpoint_path", default="./checkpoints/instruct.pt", type=str
     )
     parser.add_argument("--max_tokens", default=500, type=int)
+    parser.add_argument("--colorize_tokens", action="store_true")
     parser.add_argument("--context_length", default=1024, type=int)
     parser.add_argument("--temperature", default=0.7, type=float)
     parser.add_argument("--top_k", default=500, type=int)
@@ -134,11 +135,22 @@ def main():
 
         response_message = copy.copy(response_header)
 
-        for token in generate(prompt):
+        for token, probability in generate(prompt):
             response_message.append(token)
 
             if token in stop_tokens:
                 break
+
+            if args.colorize_tokens:
+                intensity = int(probability * 255)
+
+                r, g, b = 255 - intensity, 0, intensity
+            else:
+                r, g, b = 255, 255, 255
+
+            color = fore_rgb(r, g, b)
+
+            print(f"{color}{out}{style("reset")}", end="", flush=True)
 
             out = tokenizer.decode_single_token_bytes(token).decode(
                 "utf-8", errors="replace"

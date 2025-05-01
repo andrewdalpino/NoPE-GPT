@@ -180,6 +180,7 @@ python generate.py --temperature=0.4 --top_k=500 --top_p=0.9
 |---|---|---|---|
 | --checkpoint_path | "./checkpoints/checkpoint.pt" | string | The path to the base checkpoint file on disk. |
 | --max_tokens | 2000 | int | The maximum number of tokens that the model should generate per sample. |
+| --colorize_tokens | False | bool | Should we colorize the generated tokens based on the certainty of the model? |
 | --context_length | 1024 | int | The number of tokens to keep within the context window of the current prediction. |
 | --temperature | 1.0 | float | The amount of regularization applied to the candidate token probabilities. |
 | --top_k | 500 | int | Only sample from this many candidate tokens with the highest probabilities. |
@@ -208,6 +209,7 @@ python chat.py --temperature=0.8 --top_k=300
 | --checkpoint_path | "./checkpoints/checkpoint.pt" | string | The path to the base checkpoint file on disk. |
 | --lora_path | None | string | The path to the LoRA checkpoint. |
 | --max_tokens | 2000 | int | The maximum number of tokens that the model should generate per sample. |
+| --colorize_tokens | False | bool | Should we colorize the generated tokens based on the certainty of the model? |
 | --context_length | 1024 | int | The number of tokens to keep within the context window of the current prediction. |
 | --temperature | 0.7 | float | The amount of regularization applied to the candidate token probabilities. |
 | --top_k | 500 | int | Only sample from this many candidate tokens with the highest probabilities. |

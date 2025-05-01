@@ -8,6 +8,8 @@ import torch
 
 from torch.cuda import is_available as cuda_is_available
 
+from colored import fore_rgb, style
+
 from model import LightGPT
 
 
@@ -20,6 +22,7 @@ def main():
         "--checkpoint_path", default="./checkpoints/checkpoint.pt", type=str
     )
     parser.add_argument("--max_tokens", default=1000, type=int)
+    parser.add_argument("--colorize_tokens", action="store_true")
     parser.add_argument("--context_length", default=1024, type=int)
     parser.add_argument("--temperature", default=1.0, type=float)
     parser.add_argument("--top_k", default=500, type=int)
@@ -72,15 +75,24 @@ def main():
 
         prompt = torch.tensor(prompt, dtype=torch.int64, device=args.device)
 
-        for token in generate(prompt):
+        for token, probability in generate(prompt):
+            if token == tokenizer.eot_token:
+                break
+
             out = tokenizer.decode_single_token_bytes(token).decode(
                 "utf-8", errors="replace"
             )
 
-            print(out, end="", flush=True)
+            if args.colorize_tokens:
+                intensity = int(probability * 255)
 
-            if token == tokenizer.eot_token:
-                break
+                r, g, b = 255 - intensity, 0, intensity
+            else:
+                r, g, b = 255, 255, 255
+
+            color = fore_rgb(r, g, b)
+
+            print(f"{color}{out}{style("reset")}", end="", flush=True)
 
         print("\n")
 

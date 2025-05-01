@@ -4,6 +4,7 @@ numpy==1.26.4
 torch==2.7.0
 torchmetrics==1.5.1
 tqdm==4.66.6
+colored==2.3.0
 matplotlib==3.9.2
 tensorboard==2.18.0
 safetensors==0.5.2
