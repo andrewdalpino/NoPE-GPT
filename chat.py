@@ -10,6 +10,8 @@ import torch
 
 from torch.cuda import is_available as cuda_is_available
 
+from colored import fore_rgb, style
+
 from model import LightGPT
 from data import CHATML_TEMPLATE, RESPONSE_HEADER
 from memory import ShortTermMemory
