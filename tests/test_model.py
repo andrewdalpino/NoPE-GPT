@@ -131,6 +131,7 @@ class TestLightGPT(unittest.TestCase):
                 temperature=1.0,
                 top_k=500,
                 top_p=0.9,
+                repeat_penalty=0.1,
             )
         )
 
@@ -138,8 +139,9 @@ class TestLightGPT(unittest.TestCase):
         self.assertLessEqual(len(generated_tokens), max_tokens)
 
         # Check that each token is an integer
-        for token in generated_tokens:
+        for token, probability in generated_tokens:
             self.assertTrue(isinstance(token, int))
+            self.assertTrue(isinstance(probability, float))
 
     def test_generate_with_invalid_params(self):
         """Test that generate fails with invalid parameters."""
