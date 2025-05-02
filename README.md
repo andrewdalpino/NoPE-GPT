@@ -185,6 +185,7 @@ python generate.py --temperature=0.4 --top_k=500 --top_p=0.9
 | --temperature | 1.0 | float | The amount of regularization applied to the candidate token probabilities. |
 | --top_k | 500 | int | Only sample from this many candidate tokens with the highest probabilities. |
 | --top_p | 0.9 | float | Of the `top_k` tokens, drop all but the `top_p` portion of the cumulative probability distribution. |
+| --repeat_penalty | 0.1 | float | The proportion of the logit to penalize for previously generated tokens. |
 | --device | "cuda" | string | The device to run the computation on. |
 | --seed | None | int | The seed for the random number generator. |
 
@@ -214,6 +215,7 @@ python chat.py --temperature=0.8 --top_k=300
 | --temperature | 0.7 | float | The amount of regularization applied to the candidate token probabilities. |
 | --top_k | 500 | int | Only sample from this many candidate tokens with the highest probabilities. |
 | --top_p | 0.9 | float | Of the `top_k` tokens, drop all but the `top_p` portion of the cumulative probability distribution. |
+| --repeat_penalty | 0.1 | float | The proportion of the logit to penalize for previously generated tokens. |
 | --device | "cuda" | string | The device to run the computation on. |
 | --seed | None | int | The seed for the random number generator. |
 
