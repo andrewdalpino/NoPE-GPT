@@ -37,6 +37,7 @@ def main():
     parser.add_argument("--top_k", default=500, type=int)
     parser.add_argument("--top_p", default=0.9, type=float)
     parser.add_argument("--repeat_penalty", default=0.1, type=float)
+    parser.add_argument("--repeat_window", default=50, type=int)
     parser.add_argument("--device", default="cuda", type=str)
     parser.add_argument("--seed", default=None, type=int)
 
@@ -112,6 +113,7 @@ def main():
         top_k=args.top_k,
         top_p=args.top_p,
         repeat_penalty=args.repeat_penalty,
+        repeat_window=args.repeat_window,
     )
 
     while True:
@@ -139,6 +141,8 @@ def main():
         response_message = copy.copy(response_header)
 
         for token, probability in generate(prompt):
+            token, probability = token.item(), probability.item()
+
             response_message.append(token)
 
             if token in stop_tokens:

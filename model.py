@@ -2,6 +2,7 @@ from math import sqrt
 from functools import partial
 from typing import Self
 from collections.abc import Generator
+from collections import deque
 
 import torch
 
@@ -230,7 +231,8 @@ class LightGPT(Module):
         top_k: int = 500,
         top_p: float = 0.9,
         repeat_penalty: float = 0.1,
-    ) -> Generator[tuple[int, float], None, int]:
+        repeat_window: int = 50,
+    ) -> Generator[tuple[Tensor, Tensor], None, int]:
         """
         Given a prompt, sample the next {max_tokens} tokens from the model weighted
         by their predicted probabilities and filtered by the {top_k} and {top_p}.
@@ -262,18 +264,25 @@ class LightGPT(Module):
                 f"Repeat penalty must be between 0 and 1, {repeat_penalty} given."
             )
 
+        if repeat_window <= 0:
+            raise ValueError(
+                f"Repeat window must be greater than 0, {repeat_window} given."
+            )
+
         kv_cache = KVCache(self, 1, context_length).to(prompt.device)
 
         prompt = prompt[-context_length:]
 
+        previous_tokens = deque(maxlen=repeat_window)
         num_tokens = 0
-        previous_tokens = set()
 
         while num_tokens < max_tokens:
             logits = self.predict(prompt.unsqueeze(0), kv_cache).squeeze()
 
             for previous_token in previous_tokens:
-                logits[previous_token] -= repeat_penalty * logits[previous_token]
+                logits[previous_token] -= repeat_penalty * torch.abs(
+                    logits[previous_token]
+                )
 
             logits, indices = torch.topk(logits, top_k, sorted=True)
 
@@ -299,11 +308,11 @@ class LightGPT(Module):
             next_token = indices[offset]
             probability = probabilities[offset]
 
-            yield (int(next_token.item()), probability.item())
+            yield next_token, probability
 
             num_tokens += 1
 
-            previous_tokens.add(next_token)
+            previous_tokens.append(next_token)
 
             prompt = next_token.unsqueeze(0)
 
@@ -438,14 +447,14 @@ class SelfAttention(Module):
 
         self.out_proj = Linear(embedding_dimensions, embedding_dimensions, bias=False)
 
-        head_dimensions = embedding_dimensions // num_heads
-        scale = 1.0 / sqrt(head_dimensions)
+        head_dimensions: int = embedding_dimensions // num_heads
+        scale: float = 1.0 / sqrt(head_dimensions)
 
-        self.embedding_dimensions = embedding_dimensions
-        self.num_heads = num_heads
-        self.head_dimensions = head_dimensions
-        self.scale = scale
-        self.dropout = dropout
+        self.embedding_dimensions: int = embedding_dimensions
+        self.num_heads: int = num_heads
+        self.head_dimensions: int = head_dimensions
+        self.scale: float = scale
+        self.dropout: float = dropout
 
     def forward(self, x: Tensor) -> Tensor:
         b, t, d = x.size()
@@ -513,7 +522,7 @@ class MLP(Module):
         if feed_forward_ratio not in {1, 2, 4}:
             raise ValueError("Feed-forward ratio must be either 1, 2, or 4.")
 
-        hidden_dimensions = feed_forward_ratio * embedding_dimensions
+        hidden_dimensions: int = feed_forward_ratio * embedding_dimensions
 
         self.layers = Sequential(
             Linear(embedding_dimensions, hidden_dimensions, bias=False),
@@ -565,7 +574,7 @@ class LoRA(Module):
 
         self.dropout = Dropout1d(dropout)
 
-        self.alpha = alpha
+        self.alpha: float = alpha
 
     def forward(self, weight: Tensor) -> Tensor:
         z = self.lora_b @ self.dropout(self.lora_a)

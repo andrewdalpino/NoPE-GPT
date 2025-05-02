@@ -20,13 +20,14 @@ def main():
     parser.add_argument(
         "--checkpoint_path", default="./checkpoints/checkpoint.pt", type=str
     )
-    parser.add_argument("--max_tokens", default=1000, type=int)
+    parser.add_argument("--max_tokens", default=2000, type=int)
     parser.add_argument("--colorize_tokens", action="store_true")
     parser.add_argument("--context_length", default=1024, type=int)
     parser.add_argument("--temperature", default=0.9, type=float)
     parser.add_argument("--top_k", default=500, type=int)
     parser.add_argument("--top_p", default=0.9, type=float)
     parser.add_argument("--repeat_penalty", default=0.1, type=float)
+    parser.add_argument("--repeat_window", default=50, type=int)
     parser.add_argument("--device", default="cuda", type=str)
     parser.add_argument("--seed", default=None, type=int)
 
@@ -67,16 +68,19 @@ def main():
         top_k=args.top_k,
         top_p=args.top_p,
         repeat_penalty=args.repeat_penalty,
+        repeat_window=args.repeat_window,
     )
 
     while True:
         prompt = input("Enter a prompt: ")
 
-        prompt = tokenizer.encode(prompt, allowed_special="all")
+        prompt = tokenizer.encode_ordinary(prompt)
 
         prompt = torch.tensor(prompt, dtype=torch.int64, device=args.device)
 
         for token, probability in generate(prompt):
+            token, probability = token.item(), probability.item()
+
             if token == tokenizer.eot_token:
                 break
 

@@ -1,6 +1,9 @@
 import unittest
 import torch
 import torch.nn as nn
+
+from torch import Tensor
+
 from math import sqrt
 
 from model import (
@@ -140,8 +143,8 @@ class TestLightGPT(unittest.TestCase):
 
         # Check that each token is an integer
         for token, probability in generated_tokens:
-            self.assertTrue(isinstance(token, int))
-            self.assertTrue(isinstance(probability, float))
+            self.assertTrue(isinstance(token, Tensor))
+            self.assertTrue(isinstance(probability, Tensor))
 
     def test_generate_with_invalid_params(self):
         """Test that generate fails with invalid parameters."""
