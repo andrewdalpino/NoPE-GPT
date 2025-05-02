@@ -1,6 +1,5 @@
 import random
 
-from os import path
 from functools import partial
 from argparse import ArgumentParser
 from itertools import chain
