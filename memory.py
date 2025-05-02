@@ -11,8 +11,8 @@ class ShortTermMemory:
     def __init__(self, max_tokens: int):
         self.messages: Deque[list[int]] = deque()
 
-        self.max_tokens = max_tokens
-        self.total_tokens = 0
+        self.max_tokens: int = max_tokens
+        self.total_tokens: int = 0
 
     @property
     def utilization(self) -> float:

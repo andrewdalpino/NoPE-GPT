@@ -79,10 +79,10 @@ class LightGPT(Module):
 
         self.loss_function = CrossEntropyLoss(ignore_index=IGNORE_INDEX)
 
-        self.vocabulary_size = vocabulary_size
-        self.embedding_dimensions = embedding_dimensions
-        self.num_heads = num_heads
-        self.num_layers = num_layers
+        self.vocabulary_size: int = vocabulary_size
+        self.embedding_dimensions: int = embedding_dimensions
+        self.num_heads: int = num_heads
+        self.num_layers: int = num_layers
 
     @property
     def num_trainable_params(self) -> int:
@@ -143,7 +143,7 @@ class LightGPT(Module):
             register_parametrization(
                 module.attention.qkv_proj,
                 "weight",
-                LoRA.from_linear(module.attention.qkv_proj, rank, alpha, dropout),
+                LoRA.from_linear(module.attention.qkv_proj, 3 * rank, alpha, dropout),
             )
 
             register_parametrization(
@@ -229,7 +229,8 @@ class LightGPT(Module):
         temperature: float = 1.0,
         top_k: int = 500,
         top_p: float = 0.9,
-    ) -> Generator[int, None, int]:
+        repeat_penalty: float = 0.1,
+    ) -> Generator[tuple[int, float], None, int]:
         """
         Given a prompt, sample the next {max_tokens} tokens from the model weighted
         by their predicted probabilities and filtered by the {top_k} and {top_p}.
@@ -256,16 +257,27 @@ class LightGPT(Module):
         if top_p <= 0.0 or top_p > 1.0:
             raise ValueError(f"Top p must be between 0 and 1, {top_p} given.")
 
+        if repeat_penalty < 0.0 or repeat_penalty > 1.0:
+            raise ValueError(
+                f"Repeat penalty must be between 0 and 1, {repeat_penalty} given."
+            )
+
         kv_cache = KVCache(self, 1, context_length).to(prompt.device)
 
         prompt = prompt[-context_length:]
 
         num_tokens = 0
+        previous_tokens = set()
 
         while num_tokens < max_tokens:
             logits = self.predict(prompt.unsqueeze(0), kv_cache).squeeze()
 
+            for previous_token in previous_tokens:
+                logits[previous_token] -= repeat_penalty * logits[previous_token]
+
             logits, indices = torch.topk(logits, top_k, sorted=True)
+
+            logits /= temperature
 
             probabilities = softmax(logits, dim=0)
 
@@ -280,8 +292,6 @@ class LightGPT(Module):
             logits = logits[selected_indices]
             indices = indices[selected_indices]
 
-            logits /= temperature
-
             probabilities = softmax(logits, dim=0)
 
             offset = torch.multinomial(probabilities, num_samples=1).squeeze()
@@ -292,6 +302,8 @@ class LightGPT(Module):
             yield (int(next_token.item()), probability.item())
 
             num_tokens += 1
+
+            previous_tokens.add(next_token)
 
             prompt = next_token.unsqueeze(0)
 

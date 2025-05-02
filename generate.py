@@ -23,9 +23,10 @@ def main():
     parser.add_argument("--max_tokens", default=1000, type=int)
     parser.add_argument("--colorize_tokens", action="store_true")
     parser.add_argument("--context_length", default=1024, type=int)
-    parser.add_argument("--temperature", default=1.0, type=float)
+    parser.add_argument("--temperature", default=0.9, type=float)
     parser.add_argument("--top_k", default=500, type=int)
     parser.add_argument("--top_p", default=0.9, type=float)
+    parser.add_argument("--repeat_penalty", default=0.1, type=float)
     parser.add_argument("--device", default="cuda", type=str)
     parser.add_argument("--seed", default=None, type=int)
 
@@ -65,6 +66,7 @@ def main():
         temperature=args.temperature,
         top_k=args.top_k,
         top_p=args.top_p,
+        repeat_penalty=args.repeat_penalty,
     )
 
     while True:
