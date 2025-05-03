@@ -25,8 +25,7 @@ class KVCache(Module):
         )
 
     def __iter__(self) -> Iterator["DynamicKVBlock"]:
-        for kv_block in self.kv_blocks:
-            yield kv_block
+        yield from self.kv_blocks
 
 
 class DynamicKVBlock(Module):
