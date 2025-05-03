@@ -134,7 +134,6 @@ python instruction-tune.py --rank=4 --alpha=0.8 --dropout=0.1
 |---|---|---|---|
 | --base_model_path | "./checkpoints/checkpoint.pt" | string | The path to the base checkpoint on disk. |
 | --dataset_subset | "all,ultra-feedback" | str | A comma-separated list of subsets of the dataset to train on. Options are `all`, `apigen-80k`, `everyday-conversations`, `explore-instruct-rewriting`, `longalign`, `metamathqa-50k`, `numina-cot-100k`, `openhermes-100k`, `self-oss-instruct`, `smol-constraints`, `smol-magpie-ultra`, `smol-rewrite`, `smol-summarize`, `systemchats-30k`, and `ultra-feedback`. |
-| --sample_ratio | 1.0 | float | The ratio of random samples to pick from the corpus. |
 | --max_tokens_per_sample | 1024 | int | The maximum number of tokens to pack into a single training sequence. |
 | --batch_size | 2 | int | The number of samples to pass through the network at a time. |
 | --gradient_accumulation_steps | 64 | int | The number of batches to pass through the network before updating the weights. |
@@ -186,6 +185,7 @@ python generate.py --temperature=0.4 --top_k=500 --top_p=0.9
 | --top_k | 500 | int | Only sample from this many candidate tokens with the highest probabilities. |
 | --top_p | 0.9 | float | Of the `top_k` tokens, drop all but the `top_p` portion of the cumulative probability distribution. |
 | --repeat_penalty | 0.1 | float | The proportion of the logit to penalize for previously generated tokens. |
+| --repeat_window | 50 | int | The number of tokens to keep within the repeat window. |
 | --device | "cuda" | string | The device to run the computation on. |
 | --seed | None | int | The seed for the random number generator. |
 
@@ -216,6 +216,7 @@ python chat.py --temperature=0.8 --top_k=300
 | --top_k | 500 | int | Only sample from this many candidate tokens with the highest probabilities. |
 | --top_p | 0.9 | float | Of the `top_k` tokens, drop all but the `top_p` portion of the cumulative probability distribution. |
 | --repeat_penalty | 0.1 | float | The proportion of the logit to penalize for previously generated tokens. |
+| --repeat_window | 50 | int | The number of tokens to keep within the repeat window. |
 | --device | "cuda" | string | The device to run the computation on. |
 | --seed | None | int | The seed for the random number generator. |
 
