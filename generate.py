@@ -11,6 +11,8 @@ from colored import fore_rgb, style
 
 from model import LightGPT
 
+WHITE = (255, 255, 255)
+
 
 def main():
     parser = ArgumentParser(
@@ -93,7 +95,7 @@ def main():
 
                 r, g, b = 255 - intensity, 0, intensity
             else:
-                r, g, b = 255, 255, 255
+                r, g, b = WHITE
 
             color = fore_rgb(r, g, b)
 

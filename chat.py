@@ -20,6 +20,8 @@ DEFAULT_SYSTEM_MESSAGE = (
     "Your job is to chat and answer questions as accurately as possible. "
 )
 
+WHITE = (255, 255, 255)
+
 
 def main():
     parser = ArgumentParser(description="Chat with the instruction-tuned model.")
@@ -153,7 +155,7 @@ def main():
 
                 r, g, b = 255 - intensity, 0, intensity
             else:
-                r, g, b = 255, 255, 255
+                r, g, b = WHITE
 
             color = fore_rgb(r, g, b)
 

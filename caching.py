@@ -1,4 +1,4 @@
-from typing import Self, Iterator
+from typing import Iterator
 
 import torch
 
@@ -62,7 +62,7 @@ class DynamicKVBlock(Module):
                 f"Context length must be greater than 0, {context_length} given."
             )
 
-        head_dimensions = embedding_dimensions // num_heads
+        head_dimensions: int = embedding_dimensions // num_heads
 
         k_cache = torch.empty(batch_size, num_heads, 0, head_dimensions)
         v_cache = torch.empty(batch_size, num_heads, 0, head_dimensions)
@@ -70,7 +70,7 @@ class DynamicKVBlock(Module):
         self.k_cache = Buffer(k_cache, persistent=False)
         self.v_cache = Buffer(v_cache, persistent=False)
 
-        self.context_length = context_length
+        self.context_length: int = context_length
 
     @torch.no_grad()
     def update(self, k: Tensor, v: Tensor) -> tuple[Tensor, Tensor]:

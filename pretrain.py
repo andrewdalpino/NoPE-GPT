@@ -23,8 +23,6 @@ from torchmetrics.text import Perplexity
 
 import tiktoken
 
-from tiktoken import Encoding
-
 from data import Fineweb
 from model import LightGPT
 
@@ -302,7 +300,7 @@ def main():
                 f"Gradient Norm: {average_gradient_norm:.4f}",
             )
 
-        if epoch % args.eval_interval == 0 and IS_MASTER:
+        if IS_MASTER and epoch % args.eval_interval == 0:
             model.eval()
 
             for x, y in tqdm(test_loader, desc="Testing", leave=False):
@@ -324,7 +322,7 @@ def main():
 
             model.train()
 
-        if epoch % args.checkpoint_interval == 0 and IS_MASTER:
+        if IS_MASTER and epoch % args.checkpoint_interval == 0:
             checkpoint = {
                 "epoch": epoch,
                 "tokenizer": tokenizer,
