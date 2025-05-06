@@ -159,13 +159,11 @@ def main():
 
             color = fore_rgb(r, g, b)
 
-            print(f"{color}{out}{style("reset")}", end="", flush=True)
-
             out = tokenizer.decode_single_token_bytes(token).decode(
                 "utf-8", errors="replace"
             )
 
-            print(out, end="", flush=True)
+            print(f"{color}{out}{style("reset")}", end="", flush=True)
 
         response_message.append(newline_token)
 
