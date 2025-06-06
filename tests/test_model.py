@@ -491,7 +491,7 @@ class TestNoPEGPTHuggingFaceConfig(unittest.TestCase):
         self.assertEqual(config.num_layers, 24)
         self.assertEqual(config.feed_forward_ratio, 4)
         self.assertEqual(config.dropout, 0.1)
-        self.assertEqual(config.model_type, "lightgpt")
+        self.assertEqual(config.model_type, "nope-gpt")
 
     def test_custom_initialization(self):
         """Test initialization with custom parameters."""
@@ -510,7 +510,7 @@ class TestNoPEGPTHuggingFaceConfig(unittest.TestCase):
         self.assertEqual(config.num_layers, 2)
         self.assertEqual(config.feed_forward_ratio, 2)
         self.assertEqual(config.dropout, 0.2)
-        self.assertEqual(config.model_type, "lightgpt")
+        self.assertEqual(config.model_type, "nope-gpt")
 
 
 class TestNoPEGPTHuggingFaceModel(unittest.TestCase):

@@ -322,7 +322,7 @@ class NoPEGPT(Module):
 class NoPEGPTHuggingFaceConfig(PretrainedConfig):
     """Provide a monolithic configuration object to enable compatibility with HuggingFace Transformers API."""
 
-    model_type = "lightgpt"
+    model_type = "nope-gpt"
 
     def __init__(
         self,
