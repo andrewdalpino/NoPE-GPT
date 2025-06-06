@@ -41,7 +41,7 @@ pip install -r requirements.txt
 
 ## Pretraining
 
-When we pre-train NoPE GPT we are focused on building a foundation of language and general knowledge to use as a base for further specialized training. The training objective is to predict the next token in a sample of text. It is a self-supervised form of training because the model learns from masked inputs of unsupervised data. The For the pretraining corpus we use the Fineweb dataset which consists of about 15T high-quality tokens gathered from the worldwide web. The dataset has been split into 3 subsets (10BT, 100BT, and 350BT versions) for training smaller models. If you'd like to start training right away, the default settings should work on most single-GPU systems with 12G of VRAM or more.
+When we pre-train NoPE GPT we are focused on building a foundation of language and general knowledge to use as a base for further specialized training. The training objective is to predict the next token in a sample of text. It is a self-supervised form of training because the model learns from masked inputs of unsupervised data. For the pretraining corpus we use the Fineweb dataset which consists of about 15T high-quality tokens gathered from the worldwide web. The dataset has been split into 3 subsets (10BT, 100BT, and 350BT versions) for training smaller models. If you'd like to start training right away, the default settings should work on most single-GPU systems with 12G of VRAM or more.
 
 ```
 python pretrain.py
