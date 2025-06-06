@@ -7,24 +7,24 @@ from torch import Tensor
 from math import sqrt
 
 from model import (
-    LightGPT,
+    NoPEGPT,
     DecoderBlock,
     SelfAttention,
     MLP,
     LoRA,
-    LightGPTHuggingFaceConfig,
-    LightGPTHuggingFaceModel,
+    NoPEGPTHuggingFaceConfig,
+    NoPEGPTHuggingFaceModel,
 )
 
 from caching import KVCache
 
 
-class TestLightGPT(unittest.TestCase):
-    """Test cases for the LightGPT model."""
+class TestNoPEGPT(unittest.TestCase):
+    """Test cases for the NoPEGPT model."""
 
     def setUp(self):
         """Set up a small model instance for testing."""
-        self.model = LightGPT(
+        self.model = NoPEGPT(
             vocabulary_size=1000,
             embedding_dimensions=128,
             num_heads=8,
@@ -59,7 +59,7 @@ class TestLightGPT(unittest.TestCase):
     def test_initialization_with_invalid_params(self):
         """Test that initialization fails with invalid parameters."""
         with self.assertRaises(ValueError):
-            LightGPT(
+            NoPEGPT(
                 vocabulary_size=0,  # Invalid
                 embedding_dimensions=128,
                 num_heads=8,
@@ -69,7 +69,7 @@ class TestLightGPT(unittest.TestCase):
             )
 
         with self.assertRaises(ValueError):
-            LightGPT(
+            NoPEGPT(
                 vocabulary_size=1000,
                 embedding_dimensions=128,
                 num_heads=8,
@@ -478,12 +478,12 @@ class TestLoRA(unittest.TestCase):
         self.assertFalse(torch.allclose(output, weight))
 
 
-class TestLightGPTHuggingFaceConfig(unittest.TestCase):
-    """Test cases for the LightGPTHuggingFaceConfig."""
+class TestNoPEGPTHuggingFaceConfig(unittest.TestCase):
+    """Test cases for the NoPEGPTHuggingFaceConfig."""
 
     def test_default_initialization(self):
         """Test initialization with default parameters."""
-        config = LightGPTHuggingFaceConfig()
+        config = NoPEGPTHuggingFaceConfig()
 
         self.assertEqual(config.vocabulary_size, 50257)
         self.assertEqual(config.embedding_dimensions, 1024)
@@ -495,7 +495,7 @@ class TestLightGPTHuggingFaceConfig(unittest.TestCase):
 
     def test_custom_initialization(self):
         """Test initialization with custom parameters."""
-        config = LightGPTHuggingFaceConfig(
+        config = NoPEGPTHuggingFaceConfig(
             vocabulary_size=1000,
             embedding_dimensions=128,
             num_heads=8,
@@ -513,12 +513,12 @@ class TestLightGPTHuggingFaceConfig(unittest.TestCase):
         self.assertEqual(config.model_type, "lightgpt")
 
 
-class TestLightGPTHuggingFaceModel(unittest.TestCase):
-    """Test cases for the LightGPTHuggingFaceModel."""
+class TestNoPEGPTHuggingFaceModel(unittest.TestCase):
+    """Test cases for the NoPEGPTHuggingFaceModel."""
 
     def setUp(self):
         """Set up a model for testing."""
-        self.config = LightGPTHuggingFaceConfig(
+        self.config = NoPEGPTHuggingFaceConfig(
             vocabulary_size=1000,
             embedding_dimensions=128,
             num_heads=8,
@@ -528,7 +528,7 @@ class TestLightGPTHuggingFaceModel(unittest.TestCase):
             padding_index=0,
         )
 
-        self.model = LightGPTHuggingFaceModel(self.config)
+        self.model = NoPEGPTHuggingFaceModel(self.config)
 
         # Use CPU for testing
         self.device = torch.device("cpu")
@@ -536,7 +536,7 @@ class TestLightGPTHuggingFaceModel(unittest.TestCase):
 
     def test_initialization(self):
         """Test that the model initializes correctly."""
-        self.assertIsInstance(self.model.model, LightGPT)
+        self.assertIsInstance(self.model.model, NoPEGPT)
 
         # Check that config parameters were passed correctly
         self.assertEqual(self.model.model.vocabulary_size, 1000)

@@ -31,7 +31,7 @@ from caching import KVCache, DynamicKVBlock
 from data import IGNORE_INDEX
 
 
-class LightGPT(Module):
+class NoPEGPT(Module):
     """A generative pretrained transformer with no positional embeddings."""
 
     def __init__(
@@ -319,7 +319,7 @@ class LightGPT(Module):
         return num_tokens
 
 
-class LightGPTHuggingFaceConfig(PretrainedConfig):
+class NoPEGPTHuggingFaceConfig(PretrainedConfig):
     """Provide a monolithic configuration object to enable compatibility with HuggingFace Transformers API."""
 
     model_type = "lightgpt"
@@ -344,15 +344,15 @@ class LightGPTHuggingFaceConfig(PretrainedConfig):
         super().__init__(**kwargs)
 
 
-class LightGPTHuggingFaceModel(PreTrainedModel):
+class NoPEGPTHuggingFaceModel(PreTrainedModel):
     """Wrap model to enable compatibility with HuggingFace Transformers API."""
 
-    config_class = LightGPTHuggingFaceConfig
+    config_class = NoPEGPTHuggingFaceConfig
 
-    def __init__(self, config: LightGPTHuggingFaceConfig):
+    def __init__(self, config: NoPEGPTHuggingFaceConfig):
         super().__init__(config)
 
-        self.model = LightGPT(
+        self.model = NoPEGPT(
             config.vocabulary_size,
             config.embedding_dimensions,
             config.num_heads,

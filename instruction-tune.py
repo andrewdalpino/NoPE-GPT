@@ -5,7 +5,7 @@ from argparse import ArgumentParser
 
 import torch
 
-from torch.utils.data import ConcatDataset, Subset, DataLoader
+from torch.utils.data import ConcatDataset, DataLoader
 from torch.optim import Adafactor
 from torch.amp import autocast
 from torch.cuda import is_available as cuda_is_available, is_bf16_supported
@@ -15,7 +15,7 @@ from torch.utils.tensorboard import SummaryWriter
 
 from torchmetrics.text import Perplexity
 
-from model import LightGPT
+from model import NoPEGPT
 from data import ChatMLTokenizer, SmolTalk, UltraFeedbackSFT, pad_collate, IGNORE_INDEX
 
 from tiktoken import Encoding
@@ -155,7 +155,9 @@ def main():
 
     dataset = ConcatDataset(datasets)
 
-    training, testing = random_split(dataset, (1.0 - args.eval_ratio, args.eval_ratio))
+    #training, testing = random_split(dataset, (1.0 - args.eval_ratio, args.eval_ratio))
+
+    training, testing, _ = random_split(dataset, (0.18, 0.02, 0.8))
 
     right_pad_collate = partial(
         pad_collate, padding_side="right", padding_index=tokenizer.eot_token
@@ -174,7 +176,7 @@ def main():
 
     model_args = checkpoint["model_args"]
 
-    model = LightGPT(**model_args)
+    model = NoPEGPT(**model_args)
 
     state_dict = checkpoint["model"]
 

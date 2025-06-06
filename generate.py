@@ -9,7 +9,7 @@ from torch.cuda import is_available as cuda_is_available
 
 from colored import fore_rgb, style
 
-from model import LightGPT
+from model import NoPEGPT
 
 WHITE = (255, 255, 255)
 
@@ -50,7 +50,7 @@ def main():
 
     tokenizer = checkpoint["tokenizer"]
 
-    model = LightGPT(**checkpoint["model_args"])
+    model = NoPEGPT(**checkpoint["model_args"])
 
     model = torch.compile(model)
 

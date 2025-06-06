@@ -1,14 +1,14 @@
-# LightGPT
+# NoPE GPT
 
-LightGPT is a lightweight generative pretrained Transformer (GPT) language model for the people! Built using [PyTorch](https://pytorch.org/) and trained on HuggingFace's [Fineweb](https://huggingface.co/datasets/HuggingFaceFW/fineweb), [SmolTalk](https://huggingface.co/datasets/HuggingFaceTB/smoltalk), and [UltraFeedback](https://huggingface.co/datasets/HuggingFaceH4/ultrafeedback_binarized) datasets, LightGPT can answer questions, follow instructions, summarize documents, chat, and more. Best of all, the model weights *and* code are fully open-source for you to customize, improve upon, and share with the world.
+NoPE GPT is a generative pretrained Transformer (GPT) language model with no positional embeddings (NoPE). Built using [PyTorch](https://pytorch.org/) and trained on HuggingFace's [Fineweb](https://huggingface.co/datasets/HuggingFaceFW/fineweb), [SmolTalk](https://huggingface.co/datasets/HuggingFaceTB/smoltalk), and [UltraFeedback](https://huggingface.co/datasets/HuggingFaceH4/ultrafeedback_binarized) datasets, NoPE GPT can answer questions, follow instructions, summarize documents, chat, and more. Best of all, the model weights *and* code are fully open-source for you to customize, improve upon, and share with the world.
 
 ## Features
 
-- **No positional embeddings (NoPE)**: LightGPT aims to be a more parsimonious model by completely removing positional embeddings from the architecture. This allows for a variable context length without complex model surgery. Despite having no positional embeddings, LightGPT performs better at context length generalization than the best relative embeddings (ALiBi, RoPE, T5) offering good performance even when operating within 2X the trained context window.
+- **No positional embeddings (NoPE)**: NoPE GPT aims to be a more parsimonious model by completely removing positional embeddings from the architecture. This allows for a variable context length without complex model surgery. Despite having no positional embeddings, NoPE GPT performs better at context length generalization than the best relative embeddings (ALiBi, RoPE, T5) offering good performance even when operating within 2X the trained context window.
 
-- **Low Memory Utilization**: LightGPT lets you progressively employ training-time memory optimizations such as fully-sharded data-parallel (FSDP), activation checkpointing, mixed precision, and low-memory optimizer updates that allow you to train larger models on smaller hardware.
+- **Low Memory Utilization**: NoPE GPT lets you progressively employ training-time memory optimizations such as fully-sharded data-parallel (FSDP), activation checkpointing, mixed precision, and low-memory optimizer updates that allow you to train larger models on smaller hardware.
 
-- **Fully Open-source**: Unlike closed-source LLMs, LightGPT provides both the model weights *and* the source code to train, fine-tune, export, and generate text from the model using your own hardware. With the help of the open-source software community, we aim to democratize access to AI and continually improve the models.
+- **Fully Open-source**: Unlike closed-source LLMs, NoPE GPT provides both the model weights *and* the source code to train, fine-tune, export, and generate text from the model using your own hardware. With the help of the open-source software community, we aim to democratize access to AI and continually improve the models.
 
 ## Recommended Pretraining Configurations
 
@@ -25,7 +25,7 @@ Below is a table of some recommended model pretraining configurations but feel f
 
 We typically recommend a training `block size` (also referred to as context length) of between 1024 to 4096 for standard models and 4096 or higher for long-context applications such as conversational chat bots, retrieval augmented generation (RAG), and chain-of-thought (CoT) prompting a.k.a "reasoning" models.
 
-**Note**: LightGPT can be trained using variable block sizes since the architecture does not depend on any discrete positional embeddings. This flexibility allows you to progressively extend the context window during training.
+**Note**: NoPE GPT can be trained using variable block sizes since the architecture does not depend on any discrete positional embeddings. This flexibility allows you to progressively extend the context window during training.
 
 ## Install Project Dependencies
 
@@ -41,7 +41,7 @@ pip install -r requirements.txt
 
 ## Pretraining
 
-When we pre-train LightGPT we are focused on building a foundation of language and general knowledge to use as a base for further specialized training. The training objective is to predict the next token in a sample of text. It is a self-supervised form of training because the model learns from masked inputs of unsupervised data. The For the pretraining corpus we use the Fineweb dataset which consists of about 15T high-quality tokens gathered from the worldwide web. The dataset has been split into 3 subsets (10BT, 100BT, and 350BT versions) for training smaller models. If you'd like to start training right away, the default settings should work on most single-GPU systems with 12G of VRAM or more.
+When we pre-train NoPE GPT we are focused on building a foundation of language and general knowledge to use as a base for further specialized training. The training objective is to predict the next token in a sample of text. It is a self-supervised form of training because the model learns from masked inputs of unsupervised data. The For the pretraining corpus we use the Fineweb dataset which consists of about 15T high-quality tokens gathered from the worldwide web. The dataset has been split into 3 subsets (10BT, 100BT, and 350BT versions) for training smaller models. If you'd like to start training right away, the default settings should work on most single-GPU systems with 12G of VRAM or more.
 
 ```
 python pretrain.py

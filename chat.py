@@ -11,12 +11,12 @@ from torch.cuda import is_available as cuda_is_available
 
 from colored import fore_rgb, style
 
-from model import LightGPT
+from model import NoPEGPT
 from data import CHATML_TEMPLATE, RESPONSE_HEADER
 from memory import ShortTermMemory
 
 DEFAULT_SYSTEM_MESSAGE = (
-    "You're a helpful AI assistant named LightGPT. "
+    "You're a helpful AI assistant named NoPEGPT. "
     "Your job is to chat and answer questions as accurately as possible. "
 )
 
@@ -58,7 +58,7 @@ def main():
         args.base_checkpoint_path, map_location=args.device, weights_only=False
     )
 
-    model = LightGPT(**checkpoint["model_args"])
+    model = NoPEGPT(**checkpoint["model_args"])
 
     model = torch.compile(model)
 

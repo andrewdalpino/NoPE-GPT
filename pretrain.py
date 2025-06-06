@@ -24,7 +24,7 @@ from torchmetrics.text import Perplexity
 import tiktoken
 
 from data import Fineweb
-from model import LightGPT
+from model import NoPEGPT
 
 from tqdm import tqdm
 
@@ -142,10 +142,10 @@ def main():
         if args.seed:
             args.seed += RANK
 
-    torch.set_float32_matmul_precision("high")
-
     if "cuda" in args.device and not cuda_is_available():
         raise RuntimeError("Cuda is not available.")
+    
+    torch.set_float32_matmul_precision("high")
 
     dtype = (
         torch.bfloat16
@@ -191,7 +191,7 @@ def main():
         "dropout": args.dropout,
     }
 
-    model = LightGPT(**model_args)
+    model = NoPEGPT(**model_args)
 
     if args.activation_checkpointing:
         model.enable_activation_checkpointing()
