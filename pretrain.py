@@ -63,7 +63,7 @@ def main():
     parser.add_argument("--rms_decay", default=-0.8, type=float)
     parser.add_argument("--low_memory_optimizer", action="store_true")
     parser.add_argument("--max_gradient_norm", default=1.0, type=float)
-    parser.add_argument("--dropout", default=0.1, type=float)
+    parser.add_argument("--dropout", default=0.0, type=float)
     parser.add_argument("--embedding_dimensions", default=1024, type=int)
     parser.add_argument("--num_attention_heads", default=16, type=int)
     parser.add_argument("--num_hidden_layers", default=24, type=int)
@@ -144,7 +144,7 @@ def main():
 
     if "cuda" in args.device and not cuda_is_available():
         raise RuntimeError("Cuda is not available.")
-    
+
     torch.set_float32_matmul_precision("high")
 
     dtype = (

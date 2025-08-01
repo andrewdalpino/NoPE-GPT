@@ -38,9 +38,10 @@ class NoPEGPT(Module):
         self,
         vocabulary_size: int,
         embedding_dimensions: int,
-        num_heads: int,
+        num_q_heads: int,
+        num_kv_heads: int,
         num_layers: int,
-        feed_forward_ratio: int,
+        hidden_ratio: int,
         dropout: float,
     ):
         super().__init__()
@@ -65,8 +66,9 @@ class NoPEGPT(Module):
             [
                 DecoderBlock(
                     embedding_dimensions,
-                    num_heads,
-                    feed_forward_ratio,
+                    num_q_heads,
+                    num_kv_heads,
+                    hidden_ratio,
                     dropout,
                 )
                 for _ in range(num_layers)
@@ -82,7 +84,7 @@ class NoPEGPT(Module):
 
         self.vocabulary_size: int = vocabulary_size
         self.embedding_dimensions: int = embedding_dimensions
-        self.num_heads: int = num_heads
+        self.num_q_heads: int = num_q_heads
         self.num_layers: int = num_layers
 
     @property
@@ -203,7 +205,7 @@ class NoPEGPT(Module):
         else:
             loss = None
 
-        return z, loss
+        return z
 
     @torch.no_grad()
     def predict(self, x: Tensor, kv_cache: KVCache) -> Tensor:
@@ -328,17 +330,19 @@ class NoPEGPTHuggingFaceConfig(PretrainedConfig):
         self,
         vocabulary_size: int = 50257,
         embedding_dimensions: int = 1024,
-        num_heads: int = 16,
+        num_q_heads: int = 16,
+        num_kv_heads: int = 16,
         num_layers: int = 24,
-        feed_forward_ratio: int = 4,
-        dropout: float = 0.1,
+        hidden_ratio: int = 4,
+        dropout: float = 0.0,
         **kwargs,
     ):
         self.vocabulary_size = vocabulary_size
         self.embedding_dimensions = embedding_dimensions
-        self.num_heads = num_heads
+        self.num_q_heads = num_q_heads
+        self.num_kv_heads = num_kv_heads
         self.num_layers = num_layers
-        self.feed_forward_ratio = feed_forward_ratio
+        self.hidden_ratio = hidden_ratio
         self.dropout = dropout
 
         super().__init__(**kwargs)
@@ -355,9 +359,10 @@ class NoPEGPTHuggingFaceModel(PreTrainedModel):
         self.model = NoPEGPT(
             config.vocabulary_size,
             config.embedding_dimensions,
-            config.num_heads,
+            config.num_q_heads,
+            config.num_kv_heads,
             config.num_layers,
-            config.feed_forward_ratio,
+            config.hidden_ratio,
             config.dropout,
         )
 
@@ -376,28 +381,27 @@ class DecoderBlock(Module):
     def __init__(
         self,
         embedding_dimensions: int,
-        num_heads: int,
-        feed_forward_ratio: int,
+        num_q_heads: int,
+        num_kv_heads: int,
+        hidden_ratio: int,
         dropout: float,
     ):
         super().__init__()
 
         self.norm1 = RMSNorm(embedding_dimensions)
-        self.attention = SelfAttention(embedding_dimensions, num_heads, dropout)
+        self.stage1 = SelfAttention(
+            embedding_dimensions, num_q_heads, num_kv_heads, dropout
+        )
 
         self.norm2 = RMSNorm(embedding_dimensions)
-        self.mlp = MLP(embedding_dimensions, feed_forward_ratio, dropout)
+        self.stage2 = InvertedBottleneck(embedding_dimensions, hidden_ratio, dropout)
 
     def forward(self, x: Tensor) -> Tensor:
-        z = self.norm1(x)
-        z = self.attention(z)
+        z = self.norm1.forward(x)
+        z = self.stage1.forward(z)
 
-        z = x + z  # Residual connection
-
-        x = z
-
-        z = self.norm2(x)
-        z = self.mlp(z)
+        z = self.norm2.forward(z)
+        z = self.stage2.forward(z)
 
         z = x + z  # Residual connection
 
@@ -407,15 +411,11 @@ class DecoderBlock(Module):
     def predict(self, x: Tensor, kv_block: DynamicKVBlock) -> Tensor:
         """A forward pass optimized for next-token prediction."""
 
-        z = self.norm1(x)
-        z = self.attention.predict(z, kv_block)
+        z = self.norm1.forward(x)
+        z = self.stage1.predict(z, kv_block)
 
-        z = x + z  # Residual connection
-
-        x = z
-
-        z = self.norm2(x)
-        z = self.mlp.predict(z)
+        z = self.norm2.forward(z)
+        z = self.stage2.predict(z)
 
         z = x + z  # Residual connection
 
@@ -423,47 +423,57 @@ class DecoderBlock(Module):
 
 
 class SelfAttention(Module):
-    """Multihead self-attention with causal masking."""
+    """Group query self-attention with causal masking."""
 
-    def __init__(self, embedding_dimensions: int, num_heads: int, dropout: float):
+    def __init__(
+        self,
+        embedding_dimensions: int,
+        num_q_heads: int,
+        num_kv_heads: int,
+        dropout: float,
+    ):
         super().__init__()
 
-        if embedding_dimensions <= 0:
-            raise ValueError(
-                f"Embedding dimensions must be greater than 0, {embedding_dimensions} given."
-            )
+        assert embedding_dimensions > 0, "Embedding dimensions must be greater than 0."
+        assert num_q_heads > 0, "Number of query heads must be greater than 0."
+        assert num_kv_heads > 0, "Number of key-value heads must be greater than 0."
 
-        if num_heads <= 0:
-            raise ValueError(f"Num heads must be greater than 0, {num_heads} given.")
+        assert (
+            embedding_dimensions % num_q_heads != 0
+        ), "Embedding dimensions must be divisible by the number of query heads."
 
-        if embedding_dimensions % num_heads != 0:
-            raise ValueError(
-                f"Embedding dimensions must be divisible by num heads, {embedding_dimensions} and {num_heads} given."
-            )
+        is_gqa: bool = num_q_heads != num_kv_heads
 
-        self.qkv_proj = Linear(
-            embedding_dimensions, 3 * embedding_dimensions, bias=False
-        )
+        head_dimensions: int = embedding_dimensions // num_q_heads
+
+        kv_dimensions: int = num_kv_heads * head_dimensions
+
+        self.q_proj = Linear(embedding_dimensions, embedding_dimensions, bias=False)
+        self.k_proj = Linear(embedding_dimensions, kv_dimensions, bias=False)
+        self.v_proj = Linear(embedding_dimensions, kv_dimensions, bias=False)
 
         self.out_proj = Linear(embedding_dimensions, embedding_dimensions, bias=False)
 
-        head_dimensions: int = embedding_dimensions // num_heads
         scale: float = 1.0 / sqrt(head_dimensions)
 
         self.embedding_dimensions: int = embedding_dimensions
-        self.num_heads: int = num_heads
+        self.num_q_heads: int = num_q_heads
+        self.num_kv_heads: int = num_kv_heads
         self.head_dimensions: int = head_dimensions
         self.scale: float = scale
         self.dropout: float = dropout
+        self.is_gqa: bool = is_gqa
 
     def forward(self, x: Tensor) -> Tensor:
         b, t, d = x.size()
 
-        q, k, v = self.qkv_proj(x).split(self.embedding_dimensions, dim=-1)
+        q = self.q_proj.forward(x)
+        k = self.k_proj.forward(x)
+        v = self.v_proj.forward(x)
 
-        q = q.view(b, t, self.num_heads, self.head_dimensions).transpose(1, 2)
-        k = k.view(b, t, self.num_heads, self.head_dimensions).transpose(1, 2)
-        v = v.view(b, t, self.num_heads, self.head_dimensions).transpose(1, 2)
+        q = q.view(b, t, self.num_q_heads, self.head_dimensions).transpose(1, 2)
+        k = k.view(b, t, self.num_kv_heads, self.head_dimensions).transpose(1, 2)
+        v = v.view(b, t, self.num_kv_heads, self.head_dimensions).transpose(1, 2)
 
         z = scaled_dot_product_attention(
             q,
@@ -472,11 +482,12 @@ class SelfAttention(Module):
             scale=self.scale,
             dropout_p=self.dropout if self.training else 0,
             is_causal=True,
+            enable_gqa=self.is_gqa,
         )
 
         z = z.transpose(1, 2).contiguous().view(b, t, d)
 
-        z = self.out_proj(z)
+        z = self.out_proj.forward(z)
 
         return z
 
@@ -488,11 +499,13 @@ class SelfAttention(Module):
 
         is_autoregressive_phase = t == 1
 
-        q, k, v = self.qkv_proj(x).split(self.embedding_dimensions, dim=-1)
+        q = self.q_proj.forward(x)
+        k = self.k_proj.forward(x)
+        v = self.v_proj.forward(x)
 
-        q = q.view(b, t, self.num_heads, self.head_dimensions).transpose(1, 2)
-        k = k.view(b, t, self.num_heads, self.head_dimensions).transpose(1, 2)
-        v = v.view(b, t, self.num_heads, self.head_dimensions).transpose(1, 2)
+        q = q.view(b, t, self.num_q_heads, self.head_dimensions).transpose(1, 2)
+        k = k.view(b, t, self.num_kv_heads, self.head_dimensions).transpose(1, 2)
+        v = v.view(b, t, self.num_kv_heads, self.head_dimensions).transpose(1, 2)
 
         k, v = kv_block.update(k, v)
 
@@ -502,27 +515,25 @@ class SelfAttention(Module):
             v,
             scale=self.scale,
             is_causal=not is_autoregressive_phase,
+            enable_gqa=self.is_gqa,
         )
 
         z = z.transpose(1, 2).contiguous().view(b, t, d)
 
-        z = self.out_proj(z)
+        z = self.out_proj.forward(z)
 
         return z
 
 
-class MLP(Module):
-    """A two layer fully-connected network with dropout."""
+class InvertedBottleneck(Module):
+    """A two layer fully-connected network with wide non-linear activations."""
 
-    def __init__(
-        self, embedding_dimensions: int, feed_forward_ratio: int, dropout: float
-    ):
+    def __init__(self, embedding_dimensions: int, hidden_ratio: int, dropout: float):
         super().__init__()
 
-        if feed_forward_ratio not in {1, 2, 4}:
-            raise ValueError("Feed-forward ratio must be either 1, 2, or 4.")
+        assert hidden_ratio in {1, 2, 4}, "Hidden ratio must be either 1, 2, or 4."
 
-        hidden_dimensions: int = feed_forward_ratio * embedding_dimensions
+        hidden_dimensions: int = hidden_ratio * embedding_dimensions
 
         self.layers = Sequential(
             Linear(embedding_dimensions, hidden_dimensions, bias=False),
@@ -556,15 +567,11 @@ class LoRA(Module):
         out_features: int,
         rank: int,
         alpha: float,
-        dropout: float,
     ):
         super().__init__()
 
-        if rank <= 0:
-            raise ValueError(f"Rank must be greater than 0, {rank} given.")
-
-        if alpha <= 0.0:
-            raise ValueError(f"Alpha must be greater than 0, {alpha} given.")
+        assert rank > 0, "Rank must be greater than 0."
+        assert alpha > 0.0, "Alpha must be greater than 0."
 
         lora_a = torch.randn(rank, in_features) / sqrt(rank)
         lora_b = torch.zeros(out_features, rank)
@@ -572,12 +579,10 @@ class LoRA(Module):
         self.lora_a = Parameter(lora_a)
         self.lora_b = Parameter(lora_b)
 
-        self.dropout = Dropout1d(dropout)
-
         self.alpha: float = alpha
 
     def forward(self, weight: Tensor) -> Tensor:
-        z = self.lora_b @ self.dropout(self.lora_a)
+        z = self.lora_b @ self.lora_a
 
         z *= self.alpha
 
