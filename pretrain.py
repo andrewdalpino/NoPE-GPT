@@ -11,6 +11,7 @@ from functools import partial
 import torch
 
 from torch.utils.data import DataLoader
+from torch.nn import CrossEntropyLoss
 from torch.optim import Adafactor
 from torch.amp import autocast
 from torch.cuda import set_device, is_available as cuda_is_available, is_bf16_supported
@@ -23,7 +24,7 @@ from torchmetrics.text import Perplexity
 
 import tiktoken
 
-from data import Fineweb
+from data import Fineweb, IGNORE_INDEX
 from model import NoPEGPT
 
 from tqdm import tqdm
@@ -54,29 +55,30 @@ def main():
     )
     parser.add_argument("--dataset_path", default="./datasets", type=str)
     parser.add_argument("--num_dataset_processes", default=8, type=int)
+    parser.add_argument("--ddp_sharding_level", default=2, choices={0, 2, 3})
     parser.add_argument("--batch_size", default=2, type=int)
     parser.add_argument("--gradient_accumulation_steps", default=128, type=int)
-    parser.add_argument("--tokens_per_sample", default=1024, type=int)
+    parser.add_argument("--tokens_per_sample", default=2048, type=int)
     parser.add_argument("--samples_per_epoch", default=4096, type=int)
     parser.add_argument("--num_epochs", default=4768, type=int)
     parser.add_argument("--learning_rate", default=1e-2, type=float)
     parser.add_argument("--rms_decay", default=-0.8, type=float)
     parser.add_argument("--low_memory_optimizer", action="store_true")
     parser.add_argument("--max_gradient_norm", default=1.0, type=float)
-    parser.add_argument("--dropout", default=0.0, type=float)
     parser.add_argument("--embedding_dimensions", default=1024, type=int)
-    parser.add_argument("--num_attention_heads", default=16, type=int)
-    parser.add_argument("--num_hidden_layers", default=24, type=int)
-    parser.add_argument("--feed_forward_ratio", default=4, choices={1, 2, 4})
+    parser.add_argument("--num_q_heads", default=16, type=int)
+    parser.add_argument("--num_kv_heads", default=4, type=int)
+    parser.add_argument("--num_decoder_layers", default=24, type=int)
+    parser.add_argument("--hidden_ratio", default=4, choices={1, 2, 4})
     parser.add_argument("--activation_checkpointing", action="store_true")
-    parser.add_argument("--ddp_sharding_level", default=2, choices={0, 2, 3})
+    parser.add_argument("--dropout", default=0.0, type=float)
     parser.add_argument("--eval_interval", default=10, type=int)
     parser.add_argument("--checkpoint_interval", default=20, type=int)
     parser.add_argument(
         "--checkpoint_path", default="./checkpoints/checkpoint.pt", type=str
     )
     parser.add_argument("--resume", action="store_true")
-    parser.add_argument("--run_dir_path", default="./runs/pretrain", type=str)
+    parser.add_argument("--run_dir_path", default="./runs", type=str)
     parser.add_argument("--device", default="cuda", type=str)
     parser.add_argument("--seed", default=None, type=int)
 
@@ -185,9 +187,10 @@ def main():
     model_args = {
         "vocabulary_size": tokenizer.n_vocab,
         "embedding_dimensions": args.embedding_dimensions,
-        "num_heads": args.num_attention_heads,
-        "num_layers": args.num_hidden_layers,
-        "feed_forward_ratio": args.feed_forward_ratio,
+        "num_q_heads": args.num_q_heads,
+        "num_kv_heads": args.num_kv_heads,
+        "num_decoder_layers": args.num_decoder_layers,
+        "hidden_ratio": args.hidden_ratio,
         "dropout": args.dropout,
     }
 
@@ -244,6 +247,8 @@ def main():
 
     print(f"Model has {model.num_trainable_params:,} trainable parameters")
 
+    loss_function = CrossEntropyLoss(ignore_index=IGNORE_INDEX)
+
     perplexity_metric = Perplexity().to(args.device)
 
     register_signal_handlers()
@@ -261,7 +266,12 @@ def main():
             y = y.to(args.device, non_blocking=True)
 
             with amp_context:
-                y_pred, loss = model.forward(x, y)
+                y_pred = model.forward(x)
+
+                y_pred = y_pred.view(-1, y_pred.size(-1))
+                labels = y.view(-1)  # Flatten the batch dimension.
+
+                loss = loss_function(y_pred, labels)
 
                 scaled_loss = loss / args.gradient_accumulation_steps
 
@@ -308,7 +318,7 @@ def main():
                 y = y.to(args.device, non_blocking=True)
 
                 with torch.no_grad():
-                    y_pred, _ = model.forward(x, None)
+                    y_pred = model.forward(x)
 
                 perplexity_metric.update(y_pred, y)
 

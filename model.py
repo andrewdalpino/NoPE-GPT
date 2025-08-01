@@ -16,7 +16,6 @@ from torch.nn import (
     SiLU,
     RMSNorm,
     Dropout1d,
-    CrossEntropyLoss,
     Parameter,
 )
 
@@ -27,8 +26,6 @@ from torch.utils.checkpoint import checkpoint as torch_checkpoint
 from transformers import PretrainedConfig, PreTrainedModel
 
 from caching import KVCache, DynamicKVBlock
-
-from data import IGNORE_INDEX
 
 
 class NoPEGPT(Module):
@@ -62,7 +59,7 @@ class NoPEGPT(Module):
 
         self.token_embeddings = token_embeddings
 
-        self.body = ModuleList(
+        self.decoder = ModuleList(
             [
                 DecoderBlock(
                     embedding_dimensions,
@@ -75,12 +72,10 @@ class NoPEGPT(Module):
             ]
         )
 
-        self.checkpoint = lambda layer, x: layer(x)
+        self.checkpoint = lambda layer, x: layer.forward(x)
 
         self.output_norm = RMSNorm(embedding_dimensions)
         self.output_layer = output_layer
-
-        self.loss_function = CrossEntropyLoss(ignore_index=IGNORE_INDEX)
 
         self.vocabulary_size: int = vocabulary_size
         self.embedding_dimensions: int = embedding_dimensions
@@ -101,6 +96,11 @@ class NoPEGPT(Module):
 
         for param in self.parameters():
             param.requires_grad = False
+
+    def unfreeze_token_embeddings(self) -> None:
+        """Unfreeze the token embeddings to allow for fine-tuning."""
+
+        self.token_embeddings.weight.requires_grad = True
 
     @torch.no_grad()
     def resize_token_embeddings(self, vocabulary_size: int) -> None:
@@ -134,19 +134,26 @@ class NoPEGPT(Module):
 
         self.vocabulary_size = vocabulary_size
 
-    def unfreeze_token_embeddings(self) -> None:
-        """Unfreeze the token embeddings to allow for fine-tuning."""
-
-        self.token_embeddings.weight.requires_grad = True
-
     def add_lora_parameters(self, rank: int, alpha: float, dropout: float) -> None:
         """Reparameterize the weights of the model using LoRA adapters."""
 
         for module in self.body:
             register_parametrization(
-                module.attention.qkv_proj,
+                module.attention.q_proj,
                 "weight",
-                LoRA.from_linear(module.attention.qkv_proj, 3 * rank, alpha, dropout),
+                LoRA.from_linear(module.attention.q_proj, rank, alpha, dropout),
+            )
+
+            register_parametrization(
+                module.attention.k_proj,
+                "weight",
+                LoRA.from_linear(module.attention.k_proj, rank, alpha, dropout),
+            )
+
+            register_parametrization(
+                module.attention.v_proj,
+                "weight",
+                LoRA.from_linear(module.attention.v_proj, rank, alpha, dropout),
             )
 
             register_parametrization(
@@ -156,15 +163,15 @@ class NoPEGPT(Module):
             )
 
             register_parametrization(
-                module.mlp.layers[0],
+                module.feedforward.layers[0],
                 "weight",
-                LoRA.from_linear(module.mlp.layers[0], rank, alpha, dropout),
+                LoRA.from_linear(module.feedforward.layers[0], rank, alpha, dropout),
             )
 
             register_parametrization(
-                module.mlp.layers[2],
+                module.feedforward.layers[2],
                 "weight",
-                LoRA.from_linear(module.mlp.layers[2], rank, alpha, dropout),
+                LoRA.from_linear(module.feedforward.layers[2], rank, alpha, dropout),
             )
 
     def lora_state_dict(self) -> dict[str, Tensor]:
@@ -184,26 +191,16 @@ class NoPEGPT(Module):
                 for name in lora_params:
                     remove_parametrizations(module, name)
 
-    def forward(
-        self, x: Tensor, y: Tensor | None = None
-    ) -> tuple[Tensor, Tensor | None]:
+    def forward(self, x: Tensor) -> Tensor:
         """A forward pass optimized for batch training."""
 
-        z = self.token_embeddings(x)
+        z = self.token_embeddings.forward(x)
 
         for layer in self.body:
             z = self.checkpoint(layer, z)
 
-        z = self.output_norm(z)
-        z = self.output_layer(z)
-
-        if y is not None:
-            y_pred = z.view(-1, z.size(-1))
-            labels = y.view(-1)  # Flatten the batch dimension.
-
-            loss = self.loss_function(y_pred, labels)
-        else:
-            loss = None
+        z = self.output_norm.forward(z)
+        z = self.output_layer.forward(z)
 
         return z
 
@@ -211,15 +208,16 @@ class NoPEGPT(Module):
     def predict(self, x: Tensor, kv_cache: KVCache) -> Tensor:
         """A forward pass optimized for next-token prediction."""
 
-        z = self.token_embeddings(x)
+        z = self.token_embeddings.forward(x)
 
         for layer, kv_block in zip(self.body, kv_cache):
             z = layer.predict(z, kv_block)
 
-        z = z[:, -1, :]  # Pluck only the last token embedding from each batch.
+        # Pluck only the last token embedding from each batch.
+        z = z[:, -1, :]
 
-        z = self.output_norm(z)
-        z = self.output_layer(z)
+        z = self.output_norm.forward(z)
+        z = self.output_layer.forward(z)
 
         return z
 
@@ -240,36 +238,17 @@ class NoPEGPT(Module):
         by their predicted probabilities and filtered by the {top_k} and {top_p}.
         """
 
-        if max_tokens <= 0:
-            raise ValueError(f"Max tokens must be greater than 0, {max_tokens} given.")
+        assert max_tokens > 0, "Max tokens must be greater than 0."
+        assert context_length > 0, "Context length must be greater than 0."
+        assert temperature > 0, "Temperature must be greater than 0."
 
-        if context_length <= 0:
-            raise ValueError(
-                f"Context length must be greater than 0, {context_length} given."
-            )
+        assert (
+            0 < top_k <= self.vocabulary_size
+        ), "Top k must be between 1 and vocabulary size."
 
-        if temperature <= 0:
-            raise ValueError(
-                f"Temperature must be greater than 0, {temperature} given."
-            )
-
-        if top_k <= 0 or top_k > self.vocabulary_size:
-            raise ValueError(
-                f"Top k must be between 1 and {self.vocabulary_size}, {top_k} given."
-            )
-
-        if top_p <= 0.0 or top_p > 1.0:
-            raise ValueError(f"Top p must be between 0 and 1, {top_p} given.")
-
-        if repeat_penalty < 0.0 or repeat_penalty > 1.0:
-            raise ValueError(
-                f"Repeat penalty must be between 0 and 1, {repeat_penalty} given."
-            )
-
-        if repeat_window <= 0:
-            raise ValueError(
-                f"Repeat window must be greater than 0, {repeat_window} given."
-            )
+        assert 0.0 < top_p <= 1.0, "Top p must be between 0 and 1."
+        assert 0.0 <= repeat_penalty <= 1.0, "Repeat penalty must be between 0 and 1."
+        assert repeat_window > 0, "Repeat window must be greater than 0."
 
         kv_cache = KVCache(self, 1, context_length).to(prompt.device)
 
@@ -366,12 +345,11 @@ class NoPEGPTHuggingFaceModel(PreTrainedModel):
             config.dropout,
         )
 
-    def forward(self, x: Tensor, y: Tensor | None = None) -> dict[str, Tensor | None]:
-        logits, loss = self.model.forward(x, y)
+    def forward(self, x: Tensor) -> dict[str, Tensor]:
+        logits = self.model.forward(x)
 
         return {
             "logits": logits,
-            "loss": loss,
         }
 
 
@@ -389,19 +367,21 @@ class DecoderBlock(Module):
         super().__init__()
 
         self.norm1 = RMSNorm(embedding_dimensions)
-        self.stage1 = SelfAttention(
+        self.attention = SelfAttention(
             embedding_dimensions, num_q_heads, num_kv_heads, dropout
         )
 
         self.norm2 = RMSNorm(embedding_dimensions)
-        self.stage2 = InvertedBottleneck(embedding_dimensions, hidden_ratio, dropout)
+        self.feedforward = InvertedBottleneck(
+            embedding_dimensions, hidden_ratio, dropout
+        )
 
     def forward(self, x: Tensor) -> Tensor:
         z = self.norm1.forward(x)
-        z = self.stage1.forward(z)
+        z = self.attention.forward(z)
 
         z = self.norm2.forward(z)
-        z = self.stage2.forward(z)
+        z = self.feedforward.forward(z)
 
         z = x + z  # Residual connection
 
@@ -412,10 +392,10 @@ class DecoderBlock(Module):
         """A forward pass optimized for next-token prediction."""
 
         z = self.norm1.forward(x)
-        z = self.stage1.predict(z, kv_block)
+        z = self.attention.predict(z, kv_block)
 
         z = self.norm2.forward(z)
-        z = self.stage2.predict(z)
+        z = self.feedforward.predict(z)
 
         z = x + z  # Residual connection
 
