@@ -155,9 +155,7 @@ def main():
 
     dataset = ConcatDataset(datasets)
 
-    # training, testing = random_split(dataset, (1.0 - args.eval_ratio, args.eval_ratio))
-
-    training, testing, _ = random_split(dataset, (0.18, 0.02, 0.8))
+    training, testing = random_split(dataset, (0.9, 0.1))
 
     right_pad_collate = partial(
         pad_collate, padding_side="right", padding_index=tokenizer.eot_token

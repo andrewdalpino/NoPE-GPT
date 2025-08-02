@@ -62,7 +62,6 @@ def main():
     parser.add_argument("--samples_per_epoch", default=4096, type=int)
     parser.add_argument("--num_epochs", default=4768, type=int)
     parser.add_argument("--learning_rate", default=1e-2, type=float)
-    parser.add_argument("--rms_decay", default=-0.8, type=float)
     parser.add_argument("--low_memory_optimizer", action="store_true")
     parser.add_argument("--max_gradient_norm", default=1.0, type=float)
     parser.add_argument("--embedding_dimensions", default=1024, type=int)
@@ -223,7 +222,6 @@ def main():
     optimizer = Adafactor(
         model.parameters(),
         lr=args.learning_rate,
-        beta2_decay=args.rms_decay,
         foreach=not args.low_memory_optimizer,
     )
 

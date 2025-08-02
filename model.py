@@ -10,7 +10,6 @@ from torch import Tensor
 from torch.nn import (
     Module,
     ModuleList,
-    Sequential,
     Embedding,
     Linear,
     SiLU,
@@ -97,6 +96,16 @@ class NoPEGPT(Module):
         for param in self.parameters():
             param.requires_grad = False
 
+    def unfreeze_last_k_decoder_layers(self, k: int) -> None:
+        """Unfreeze the last k decoder layers to allow for fine-tuning."""
+
+        if k <= 0:
+            return
+        
+        for layer in self.decoder[-k:]:
+            for param in layer.parameters():
+                param.requires_grad = True
+
     def unfreeze_token_embeddings(self) -> None:
         """Unfreeze the token embeddings to allow for fine-tuning."""
 
@@ -134,45 +143,11 @@ class NoPEGPT(Module):
 
         self.vocabulary_size = vocabulary_size
 
-    def add_lora_parameters(self, rank: int, alpha: float, dropout: float) -> None:
+    def add_lora_parameters(self, rank: int, alpha: float) -> None:
         """Reparameterize the weights of the model using LoRA adapters."""
 
-        for module in self.body:
-            register_parametrization(
-                module.attention.q_proj,
-                "weight",
-                LoRA.from_linear(module.attention.q_proj, rank, alpha, dropout),
-            )
-
-            register_parametrization(
-                module.attention.k_proj,
-                "weight",
-                LoRA.from_linear(module.attention.k_proj, rank, alpha, dropout),
-            )
-
-            register_parametrization(
-                module.attention.v_proj,
-                "weight",
-                LoRA.from_linear(module.attention.v_proj, rank, alpha, dropout),
-            )
-
-            register_parametrization(
-                module.attention.out_proj,
-                "weight",
-                LoRA.from_linear(module.attention.out_proj, rank, alpha, dropout),
-            )
-
-            register_parametrization(
-                module.feedforward.layers[0],
-                "weight",
-                LoRA.from_linear(module.feedforward.layers[0], rank, alpha, dropout),
-            )
-
-            register_parametrization(
-                module.feedforward.layers[2],
-                "weight",
-                LoRA.from_linear(module.feedforward.layers[2], rank, alpha, dropout),
-            )
+        for module in self.decoder:
+            module.add_lora_adapters(rank, alpha)
 
     def lora_state_dict(self) -> dict[str, Tensor]:
         """Return a state dict containing only the LoRA parameters."""
@@ -196,7 +171,7 @@ class NoPEGPT(Module):
 
         z = self.token_embeddings.forward(x)
 
-        for layer in self.body:
+        for layer in self.decoder:
             z = self.checkpoint(layer, z)
 
         z = self.output_norm.forward(z)
@@ -210,7 +185,7 @@ class NoPEGPT(Module):
 
         z = self.token_embeddings.forward(x)
 
-        for layer, kv_block in zip(self.body, kv_cache):
+        for layer, kv_block in zip(self.decoder, kv_cache):
             z = layer.predict(z, kv_block)
 
         # Pluck only the last token embedding from each batch.
@@ -307,13 +282,13 @@ class NoPEGPTHuggingFaceConfig(PretrainedConfig):
 
     def __init__(
         self,
-        vocabulary_size: int = 50257,
-        embedding_dimensions: int = 1024,
-        num_q_heads: int = 16,
-        num_kv_heads: int = 16,
-        num_layers: int = 24,
-        hidden_ratio: int = 4,
-        dropout: float = 0.0,
+        vocabulary_size: int,
+        embedding_dimensions: int,
+        num_q_heads: int,
+        num_kv_heads: int,
+        num_layers: int,
+        hidden_ratio: int,
+        dropout: float,
         **kwargs,
     ):
         self.vocabulary_size = vocabulary_size
@@ -375,6 +350,15 @@ class DecoderBlock(Module):
         self.feedforward = InvertedBottleneck(
             embedding_dimensions, hidden_ratio, dropout
         )
+
+    def add_lora_adapters(self, rank: int, alpha: float) -> None:
+        """Reparameterize the weights of the decoder using LoRA adapters."""
+
+        assert rank > 0, "Rank must be greater than 0."
+        assert alpha > 0.0, "Alpha must be greater than 0."
+
+        self.attention.add_lora_adapters(rank, alpha)
+        self.feedforward.add_lora_adapters(rank, alpha)
 
     def forward(self, x: Tensor) -> Tensor:
         z = self.norm1.forward(x)
@@ -440,9 +424,31 @@ class SelfAttention(Module):
         self.num_q_heads: int = num_q_heads
         self.num_kv_heads: int = num_kv_heads
         self.head_dimensions: int = head_dimensions
+        self.is_gqa: bool = is_gqa
         self.scale: float = scale
         self.dropout: float = dropout
-        self.is_gqa: bool = is_gqa
+
+    def add_lora_adapters(self, rank: int, alpha: float) -> None:
+        """Reparameterize the weights of the attention module using LoRA adapters."""
+
+        assert rank > 0, "Rank must be greater than 0."
+        assert alpha > 0.0, "Alpha must be greater than 0."
+
+        register_parametrization(
+            self.q_proj, "weight", LoRA.from_linear(self.q_proj, rank, alpha)
+        )
+
+        register_parametrization(
+            self.k_proj, "weight", LoRA.from_linear(self.k_proj, rank, alpha)
+        )
+
+        register_parametrization(
+            self.v_proj, "weight", LoRA.from_linear(self.v_proj, rank, alpha)
+        )
+
+        register_parametrization(
+            self.out_proj, "weight", LoRA.from_linear(self.out_proj, rank, alpha)
+        )
 
     def forward(self, x: Tensor) -> Tensor:
         b, t, d = x.size()
@@ -515,38 +521,54 @@ class InvertedBottleneck(Module):
 
         hidden_dimensions: int = hidden_ratio * embedding_dimensions
 
-        self.layers = Sequential(
-            Linear(embedding_dimensions, hidden_dimensions, bias=False),
-            SiLU(),
-            Linear(hidden_dimensions, embedding_dimensions, bias=False),
-        )
+        self.linear1 = Linear(embedding_dimensions, hidden_dimensions, bias=False)
+        self.linear2 = Linear(hidden_dimensions, embedding_dimensions, bias=False)
+
+        self.silu = SiLU()
 
         self.dropout = Dropout1d(p=dropout)
 
+    def add_lora_adapters(self, rank: int, alpha: float) -> None:
+        """Reparameterize the weights of the feedforward module using LoRA adapters."""
+
+        assert rank > 0, "Rank must be greater than 0."
+        assert alpha > 0.0, "Alpha must be greater than 0."
+
+        register_parametrization(
+            self.linear1, "weight", LoRA.from_linear(self.linear1, rank, alpha)
+        )
+
+        register_parametrization(
+            self.linear2, "weight", LoRA.from_linear(self.linear2, rank, alpha)
+        )
+
     def forward(self, x: Tensor) -> Tensor:
-        return self.dropout(self.layers(x))
+        z = self.linear1.forward(x)
+        z = self.silu.forward(z)
+        z = self.dropout.forward(z)
+        z = self.linear2.forward(z)
+
+        return z
 
     def predict(self, x: Tensor) -> Tensor:
-        return self.layers(x)
+        z = self.linear1.forward(x)
+        z = self.silu.forward(z)
+        z = self.linear2.forward(z)
+
+        return
 
 
 class LoRA(Module):
     """Low rank weight decomposition transformation."""
 
     @classmethod
-    def from_linear(
-        cls, linear: Linear, rank: int, alpha: float, dropout: float
-    ) -> Self:
+    def from_linear(cls, linear: Linear, rank: int, alpha: float) -> Self:
         out_features, in_features = linear.weight.shape
 
-        return cls(in_features, out_features, rank, alpha, dropout)
+        return cls(in_features, out_features, rank, alpha)
 
     def __init__(
-        self,
-        in_features: int,
-        out_features: int,
-        rank: int,
-        alpha: float,
+        self, in_features: int, out_features: int, rank: int, alpha: float
     ):
         super().__init__()
 
@@ -566,4 +588,6 @@ class LoRA(Module):
 
         z *= self.alpha
 
-        return weight + z
+        z = weight + z
+
+        return z
