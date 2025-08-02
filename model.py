@@ -36,7 +36,7 @@ class NoPEGPT(Module):
         embedding_dimensions: int,
         num_q_heads: int,
         num_kv_heads: int,
-        num_layers: int,
+        num_decoder_layers: int,
         hidden_ratio: int,
         dropout: float,
     ):
@@ -47,8 +47,8 @@ class NoPEGPT(Module):
                 f"Vocabulary size must be greater than 0, {vocabulary_size} given."
             )
 
-        if num_layers <= 0:
-            raise ValueError(f"Num layers must be greater than 0, {num_layers} given.")
+        if num_decoder_layers <= 0:
+            raise ValueError(f"Num decoder layers must be greater than 0.")
 
         token_embeddings = Embedding(vocabulary_size, embedding_dimensions)
 
@@ -67,7 +67,7 @@ class NoPEGPT(Module):
                     hidden_ratio,
                     dropout,
                 )
-                for _ in range(num_layers)
+                for _ in range(num_decoder_layers)
             ]
         )
 
@@ -79,7 +79,6 @@ class NoPEGPT(Module):
         self.vocabulary_size: int = vocabulary_size
         self.embedding_dimensions: int = embedding_dimensions
         self.num_q_heads: int = num_q_heads
-        self.num_layers: int = num_layers
 
     @property
     def num_trainable_params(self) -> int:
@@ -286,7 +285,7 @@ class NoPEGPTHuggingFaceConfig(PretrainedConfig):
         embedding_dimensions: int,
         num_q_heads: int,
         num_kv_heads: int,
-        num_layers: int,
+        num_decoder_layers: int,
         hidden_ratio: int,
         dropout: float,
         **kwargs,
@@ -295,7 +294,7 @@ class NoPEGPTHuggingFaceConfig(PretrainedConfig):
         self.embedding_dimensions = embedding_dimensions
         self.num_q_heads = num_q_heads
         self.num_kv_heads = num_kv_heads
-        self.num_layers = num_layers
+        self.num_decoder_layers = num_decoder_layers
         self.hidden_ratio = hidden_ratio
         self.dropout = dropout
 
@@ -315,7 +314,7 @@ class NoPEGPTHuggingFaceModel(PreTrainedModel):
             config.embedding_dimensions,
             config.num_q_heads,
             config.num_kv_heads,
-            config.num_layers,
+            config.num_decoder_layers,
             config.hidden_ratio,
             config.dropout,
         )
@@ -403,7 +402,7 @@ class SelfAttention(Module):
         assert num_kv_heads > 0, "Number of key-value heads must be greater than 0."
 
         assert (
-            embedding_dimensions % num_q_heads != 0
+            embedding_dimensions % num_q_heads == 0
         ), "Embedding dimensions must be divisible by the number of query heads."
 
         is_gqa: bool = num_q_heads != num_kv_heads

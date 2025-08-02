@@ -1,12 +1,10 @@
 # NoPE GPT
 
-NoPE GPT is a generative pretrained Transformer (GPT) language model with no positional embeddings (NoPE). Built using [PyTorch](https://pytorch.org/) and trained on HuggingFace's [Fineweb](https://huggingface.co/datasets/HuggingFaceFW/fineweb), [SmolTalk](https://huggingface.co/datasets/HuggingFaceTB/smoltalk), and [UltraFeedback](https://huggingface.co/datasets/HuggingFaceH4/ultrafeedback_binarized) datasets, NoPE GPT can answer questions, follow instructions, summarize documents, chat, and more. Best of all, the model weights *and* code are fully open-source for you to customize, improve upon, and share with the world.
+NoPE GPT is a generative pretrained Transformer (GPT) language model with no positional embeddings (NoPE). Built using [PyTorch](https://pytorch.org/) and trained on HuggingFace's [Fineweb](https://huggingface.co/datasets/HuggingFaceFW/fineweb), [SmolTalk](https://huggingface.co/datasets/HuggingFaceTB/smoltalk), and [UltraFeedback](https://huggingface.co/datasets/HuggingFaceH4/ultrafeedback_binarized) datasets, NoPE GPT can answer questions, follow instructions, summarize documents, chat, and more.
 
 ## Features
 
-- **No positional embeddings (NoPE)**: NoPE GPT aims to be a more parsimonious model by completely removing positional embeddings from the architecture. This allows for a variable context length without complex model surgery. Despite having no positional embeddings, NoPE GPT performs better at context length generalization than the best relative embeddings (ALiBi, RoPE, T5) offering good performance even when operating within 2X the trained context window.
-
-- **Low Memory Utilization**: NoPE GPT lets you progressively employ training-time memory optimizations such as fully-sharded data-parallel (FSDP), activation checkpointing, mixed precision, and low-memory optimizer updates that allow you to train larger models on smaller hardware.
+- **No positional embeddings (NoPE)**: NoPE GPT aims to be a more parsimonious model by completely removing positional embeddings from the architecture allowing the context length to vary without complex model surgery. Despite having no positional embeddings, NoPE GPT performs better at context length generalization than the best relative embeddings (ALiBi, RoPE, T5) offering good performance even when operating within 2X the trained context window.
 
 - **Fully Open-source**: Unlike closed-source LLMs, NoPE GPT provides both the model weights *and* the source code to train, fine-tune, export, and generate text from the model using your own hardware. With the help of the open-source software community, we aim to democratize access to AI and continually improve the models.
 
@@ -232,4 +230,3 @@ python chat.py --temperature=0.8 --top_k=300
 >- B. Zhang, et al. Root Mean Square Layer Normalization. 33rd Conference on Neural Information Processing Systems, NeurIPS 2019.
 >- J. Kaplan, et al. Scaling Laws for Neural Language Models, OpenAI, 2020.
 >- J. Hoffman, et al. Training Compute-Optimal Large Language Models, Deep Mind, 2022.
->- R. Sutton. The Bitter Lesson, https://www.incompleteideas.net/IncIdeas/BitterLesson.html, 2019.

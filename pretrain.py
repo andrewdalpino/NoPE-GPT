@@ -55,7 +55,7 @@ def main():
     )
     parser.add_argument("--dataset_path", default="./datasets", type=str)
     parser.add_argument("--num_dataset_processes", default=8, type=int)
-    parser.add_argument("--ddp_sharding_level", default=2, choices={0, 2, 3})
+    parser.add_argument("--ddp_sharding_level", default=2, choices={0, 2, 3}, type=int)
     parser.add_argument("--batch_size", default=2, type=int)
     parser.add_argument("--gradient_accumulation_steps", default=128, type=int)
     parser.add_argument("--tokens_per_sample", default=2048, type=int)
@@ -68,7 +68,7 @@ def main():
     parser.add_argument("--num_q_heads", default=16, type=int)
     parser.add_argument("--num_kv_heads", default=4, type=int)
     parser.add_argument("--num_decoder_layers", default=24, type=int)
-    parser.add_argument("--hidden_ratio", default=4, choices={1, 2, 4})
+    parser.add_argument("--hidden_ratio", default=4, choices={1, 2, 4}, type=int)
     parser.add_argument("--activation_checkpointing", action="store_true")
     parser.add_argument("--dropout", default=0.0, type=float)
     parser.add_argument("--eval_interval", default=10, type=int)
@@ -225,7 +225,7 @@ def main():
         foreach=not args.low_memory_optimizer,
     )
 
-    starting_epoch = 1
+    starting_step = 1
 
     if args.resume:
         checkpoint = torch.load(
@@ -235,7 +235,7 @@ def main():
         model.load_state_dict(checkpoint["model"])
         optimizer.load_state_dict(checkpoint["optimizer"])
 
-        starting_epoch += checkpoint["epoch"]
+        starting_step += checkpoint["step"]
 
         model = model.to(args.device)
 
@@ -253,62 +253,58 @@ def main():
 
     print("Pretraining ...")
 
-    for epoch in range(starting_epoch, args.num_epochs + 1):
-        total_cross_entropy, total_gradient_norm = 0.0, 0.0
-        total_batches, total_steps = 0, 0
+    for step, (x, y) in enumerate(
+        tqdm(train_loader, desc=f"Training", leave=False), start=1
+    ):
+        x = x.to(args.device, non_blocking=True)
+        y = y.to(args.device, non_blocking=True)
 
-        for step, (x, y) in enumerate(
-            tqdm(train_loader, desc=f"Epoch {epoch}", leave=False), start=1
-        ):
-            x = x.to(args.device, non_blocking=True)
-            y = y.to(args.device, non_blocking=True)
+        with amp_context:
+            y_pred = model.forward(x)
 
-            with amp_context:
-                y_pred = model.forward(x)
+            y_pred = y_pred.view(-1, y_pred.size(-1))
+            labels = y.view(-1)  # Flatten the batch dimension.
 
-                y_pred = y_pred.view(-1, y_pred.size(-1))
-                labels = y.view(-1)  # Flatten the batch dimension.
+            loss = loss_function(y_pred, labels)
 
-                loss = loss_function(y_pred, labels)
+            scaled_loss = loss / args.gradient_accumulation_steps
 
-                scaled_loss = loss / args.gradient_accumulation_steps
+        sync_and_step = step % args.gradient_accumulation_steps == 0
 
-            sync_and_step = step % args.gradient_accumulation_steps == 0
+        gradient_synchronization_context = (
+            model.no_sync() if IS_DDP and not sync_and_step else nullcontext()
+        )
 
-            gradient_synchronization_context = (
-                model.no_sync() if IS_DDP and not sync_and_step else nullcontext()
-            )
+        with gradient_synchronization_context:
+            scaled_loss.backward()
 
-            with gradient_synchronization_context:
-                scaled_loss.backward()
+        total_cross_entropy += loss.item()
+        total_batches += 1
 
-            total_cross_entropy += loss.item()
-            total_batches += 1
+        if sync_and_step:
+            norm = clip_grad_norm_(model.parameters(), args.max_gradient_norm)
 
-            if sync_and_step:
-                norm = clip_grad_norm_(model.parameters(), args.max_gradient_norm)
+            optimizer.step()
 
-                optimizer.step()
+            optimizer.zero_grad(set_to_none=True)
 
-                optimizer.zero_grad(set_to_none=True)
+            total_gradient_norm += norm.item()
+            total_steps += 1
 
-                total_gradient_norm += norm.item()
-                total_steps += 1
+            if IS_MASTER:
+                average_cross_entropy = total_cross_entropy / total_batches
+                average_gradient_norm = total_gradient_norm / total_steps
 
-        if IS_MASTER:
-            average_cross_entropy = total_cross_entropy / total_batches
-            average_gradient_norm = total_gradient_norm / total_steps
+                logger.add_scalar("Cross Entropy", average_cross_entropy, step)
+                logger.add_scalar("Gradient Norm", average_gradient_norm, step)
 
-            logger.add_scalar("Cross Entropy", average_cross_entropy, epoch)
-            logger.add_scalar("Gradient Norm", average_gradient_norm, epoch)
+                print(
+                    f"Step {step}:",
+                    f"Cross Entropy: {average_cross_entropy:.5f},",
+                    f"Gradient Norm: {average_gradient_norm:.4f}",
+                )
 
-            print(
-                f"Epoch {epoch}:",
-                f"Cross Entropy: {average_cross_entropy:.5f},",
-                f"Gradient Norm: {average_gradient_norm:.4f}",
-            )
-
-        if IS_MASTER and epoch % args.eval_interval == 0:
+        if IS_MASTER and step % args.eval_interval == 0:
             model.eval()
 
             for x, y in tqdm(test_loader, desc="Testing", leave=False):
@@ -322,7 +318,7 @@ def main():
 
             perplexity = perplexity_metric.compute()
 
-            logger.add_scalar("Perplexity", perplexity, epoch)
+            logger.add_scalar("Perplexity", perplexity, step)
 
             print(f"Perplexity: {perplexity:.3f}")
 
@@ -330,9 +326,9 @@ def main():
 
             model.train()
 
-        if IS_MASTER and epoch % args.checkpoint_interval == 0:
+        if IS_MASTER and step % args.checkpoint_interval == 0:
             checkpoint = {
-                "epoch": epoch,
+                "step": total_steps,
                 "tokenizer": tokenizer,
                 "model_args": model_args,
                 "model": model.state_dict(),
