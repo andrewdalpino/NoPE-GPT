@@ -18,6 +18,7 @@ from torch.cuda import set_device, is_available as cuda_is_available, is_bf16_su
 from torch.nn.utils import clip_grad_norm_
 from torch.distributed import init_process_group, destroy_process_group
 from torch.distributed.fsdp import FullyShardedDataParallel, ShardingStrategy
+from torch.utils.data import random_split
 from torch.utils.tensorboard import SummaryWriter
 
 from torchmetrics.text import Perplexity
@@ -59,19 +60,18 @@ def main():
     parser.add_argument("--batch_size", default=2, type=int)
     parser.add_argument("--gradient_accumulation_steps", default=128, type=int)
     parser.add_argument("--tokens_per_sample", default=2048, type=int)
-    parser.add_argument("--samples_per_epoch", default=4096, type=int)
-    parser.add_argument("--num_epochs", default=4768, type=int)
     parser.add_argument("--learning_rate", default=1e-2, type=float)
     parser.add_argument("--low_memory_optimizer", action="store_true")
     parser.add_argument("--max_gradient_norm", default=1.0, type=float)
     parser.add_argument("--embedding_dimensions", default=1024, type=int)
     parser.add_argument("--num_q_heads", default=16, type=int)
     parser.add_argument("--num_kv_heads", default=4, type=int)
-    parser.add_argument("--num_decoder_layers", default=24, type=int)
+    parser.add_argument("--num_decoder_layers", default=20, type=int)
     parser.add_argument("--hidden_ratio", default=4, choices={1, 2, 4}, type=int)
     parser.add_argument("--activation_checkpointing", action="store_true")
     parser.add_argument("--dropout", default=0.0, type=float)
-    parser.add_argument("--eval_interval", default=10, type=int)
+    parser.add_argument("--eval_interval", default=20, type=int)
+    parser.add_argument("--num_eval_samples", default=2048, type=int)
     parser.add_argument("--checkpoint_interval", default=20, type=int)
     parser.add_argument(
         "--checkpoint_path", default="./checkpoints/checkpoint.pt", type=str
@@ -95,9 +95,6 @@ def main():
         raise ValueError(
             f"Learning rate must be a positive value, {args.learning_rate} given."
         )
-
-    if args.num_epochs < 1:
-        raise ValueError(f"Must train for at least 1 epoch, {args.num_epochs} given.")
 
     if args.eval_interval < 1:
         raise ValueError(
@@ -164,24 +161,16 @@ def main():
 
     tokenizer = tiktoken.get_encoding(args.token_encoding)
 
-    new_dataset = partial(
-        Fineweb,
+    dataset = Fineweb(
         root_path=args.dataset_path,
         subset=args.dataset_subset,
         tokenizer=tokenizer,
         tokens_per_sample=args.tokens_per_sample,
-        samples_per_epoch=args.samples_per_epoch,
     )
 
-    training = new_dataset(split="train")
-    testing = new_dataset(split="test")
+    n_train_samples = len(dataset) - args.num_eval_samples
 
-    train_loader = DataLoader(
-        training, batch_size=args.batch_size, pin_memory="cpu" not in args.device
-    )
-    test_loader = DataLoader(
-        testing, batch_size=args.batch_size, pin_memory="cpu" not in args.device
-    )
+    training, testing = random_split(dataset, [n_train_samples, args.num_eval_samples])
 
     model_args = {
         "vocabulary_size": tokenizer.n_vocab,
@@ -225,7 +214,7 @@ def main():
         foreach=not args.low_memory_optimizer,
     )
 
-    starting_step = 1
+    step = 1
 
     if args.resume:
         checkpoint = torch.load(
@@ -235,7 +224,9 @@ def main():
         model.load_state_dict(checkpoint["model"])
         optimizer.load_state_dict(checkpoint["optimizer"])
 
-        starting_step += checkpoint["step"]
+        training.change_step_offset(checkpoint["step"])
+
+        step += checkpoint["step"]
 
         model = model.to(args.device)
 
@@ -245,6 +236,13 @@ def main():
 
     print(f"Model has {model.num_trainable_params:,} trainable parameters")
 
+    train_loader = DataLoader(
+        training, batch_size=args.batch_size, pin_memory="cpu" not in args.device
+    )
+    test_loader = DataLoader(
+        testing, batch_size=args.batch_size, pin_memory="cpu" not in args.device
+    )
+
     loss_function = CrossEntropyLoss(ignore_index=IGNORE_INDEX)
 
     perplexity_metric = Perplexity().to(args.device)
@@ -253,9 +251,17 @@ def main():
 
     print("Pretraining ...")
 
-    for step, (x, y) in enumerate(
-        tqdm(train_loader, desc=f"Training", leave=False), start=1
-    ):
+    new_progress_bar = partial(
+        tqdm,
+        total=args.gradient_accumulation_steps,
+        leave=False,
+    )
+
+    total_cross_entropy = 0.0
+
+    progress_bar = new_progress_bar(desc=f"Step {step:,}")
+
+    for index, (x, y) in enumerate(train_loader, start=1):
         x = x.to(args.device, non_blocking=True)
         y = y.to(args.device, non_blocking=True)
 
@@ -269,7 +275,7 @@ def main():
 
             scaled_loss = loss / args.gradient_accumulation_steps
 
-        sync_and_step = step % args.gradient_accumulation_steps == 0
+        sync_and_step = index % args.gradient_accumulation_steps == 0
 
         gradient_synchronization_context = (
             model.no_sync() if IS_DDP and not sync_and_step else nullcontext()
@@ -279,7 +285,8 @@ def main():
             scaled_loss.backward()
 
         total_cross_entropy += loss.item()
-        total_batches += 1
+
+        progress_bar.update(1)
 
         if sync_and_step:
             norm = clip_grad_norm_(model.parameters(), args.max_gradient_norm)
@@ -288,59 +295,68 @@ def main():
 
             optimizer.zero_grad(set_to_none=True)
 
-            total_gradient_norm += norm.item()
-            total_steps += 1
+            progress_bar.close()
 
             if IS_MASTER:
-                average_cross_entropy = total_cross_entropy / total_batches
-                average_gradient_norm = total_gradient_norm / total_steps
+                average_cross_entropy = (
+                    total_cross_entropy / args.gradient_accumulation_steps
+                )
+                gradient_norm = norm.item()
 
                 logger.add_scalar("Cross Entropy", average_cross_entropy, step)
-                logger.add_scalar("Gradient Norm", average_gradient_norm, step)
+                logger.add_scalar("Gradient Norm", gradient_norm, step)
 
                 print(
-                    f"Step {step}:",
+                    f"Step {step:,}:",
                     f"Cross Entropy: {average_cross_entropy:.5f},",
-                    f"Gradient Norm: {average_gradient_norm:.4f}",
+                    f"Gradient Norm: {gradient_norm:.4f}",
                 )
 
-        if IS_MASTER and step % args.eval_interval == 0:
-            model.eval()
+            if IS_MASTER and step % args.eval_interval == 0:
+                model.eval()
 
-            for x, y in tqdm(test_loader, desc="Testing", leave=False):
-                x = x.to(args.device, non_blocking=True)
-                y = y.to(args.device, non_blocking=True)
+                for x, y in tqdm(test_loader, desc="Testing", leave=False):
+                    x = x.to(args.device, non_blocking=True)
+                    y = y.to(args.device, non_blocking=True)
 
-                with torch.no_grad():
-                    y_pred = model.forward(x)
+                    with torch.no_grad():
+                        y_pred = model.forward(x)
 
-                perplexity_metric.update(y_pred, y)
+                    perplexity_metric.update(y_pred, y)
 
-            perplexity = perplexity_metric.compute()
+                perplexity = perplexity_metric.compute()
 
-            logger.add_scalar("Perplexity", perplexity, step)
+                logger.add_scalar("Perplexity", perplexity, step)
 
-            print(f"Perplexity: {perplexity:.3f}")
+                print(f"Perplexity: {perplexity:.3f}")
 
-            perplexity_metric.reset()
+                perplexity_metric.reset()
 
-            model.train()
+                model.train()
 
-        if IS_MASTER and step % args.checkpoint_interval == 0:
-            checkpoint = {
-                "step": total_steps,
-                "tokenizer": tokenizer,
-                "model_args": model_args,
-                "model": model.state_dict(),
-                "optimizer": optimizer.state_dict(),
-            }
+            if IS_MASTER and step % args.checkpoint_interval == 0:
+                checkpoint = {
+                    "step": step,
+                    "tokenizer": tokenizer,
+                    "model_args": model_args,
+                    "model": model.state_dict(),
+                    "optimizer": optimizer.state_dict(),
+                }
 
-            torch.save(checkpoint, args.checkpoint_path)
+                torch.save(checkpoint, args.checkpoint_path)
 
-            print("Checkpoint saved")
+                print("Checkpoint saved")
+
+            step += 1
+
+            total_cross_entropy = 0.0
+
+            progress_bar = new_progress_bar(desc=f"Step {step:,}")
 
     if IS_DDP:
         ddp_cleanup()
+
+    progress_bar.close()
 
     print("Done!")
 

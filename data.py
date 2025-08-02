@@ -1,6 +1,3 @@
-import random
-import warnings
-
 from os import path, remove as delete_file
 from functools import partial
 
@@ -10,39 +7,37 @@ from tiktoken import Encoding
 
 import numpy as np
 
-import torch
+from numpy import ndarray
 
 from torch import Tensor
-from torch.utils.data import IterableDataset, Dataset
+from torch.utils.data import Dataset
 from torch.nn.utils.rnn import pad_sequence
 
+from tokenization import ChatMLTokenizer
+
 from tqdm import tqdm
-
-CHATML_TEMPLATE = "<|im_start|>{role}\n{message}\n<|im_end|>\n"
-
-RESPONSE_HEADER = "<|im_start|>assistant\n"
 
 IGNORE_INDEX = -100
 
 
-class Fineweb(IterableDataset):
+class Fineweb(Dataset):
     """
     The Fineweb dataset by HuggingFace, tokenized, and stored as a memory map for fast access
-    during pre-training. Endlessly emits random chunks of tokens from the corpus in infinitum.
+    during pre-training.
     """
 
     DATASET_NAME = "HuggingFaceFW/fineweb"
 
     SUBSETS = frozenset({"sample-10BT", "sample-100BT", "sample-350BT"})
 
+    step_offset: int = 0
+
     def __init__(
         self,
         tokenizer: Encoding,
-        root_path: str = "./dataset",
-        subset: str | None = "sample-10BT",
-        split: str = "train",
-        tokens_per_sample: int = 1024,
-        samples_per_epoch: int = 4096,
+        root_path: str,
+        subset: str | None,
+        tokens_per_sample: int,
     ):
         super().__init__()
 
@@ -50,14 +45,8 @@ class Fineweb(IterableDataset):
             if subset not in self.SUBSETS:
                 raise ValueError(f"Invalid subset, {subset} given.")
 
-        if split not in {"train", "test"}:
-            raise ValueError(f"Split must be either train or test, {split} given.")
-
         if tokens_per_sample < 1:
             raise ValueError(f"Tokens per sample must be greater than 0.")
-
-        if samples_per_epoch < 1:
-            raise ValueError(f"Samples per epoch must be greater than 0.")
 
         dataset_name = f"fineweb-{subset}" if subset is not None else "fineweb"
 
@@ -113,17 +102,10 @@ class Fineweb(IterableDataset):
 
         memmap = np.memmap(bin_path, dtype=np.uint16, mode="r")
 
-        tokens_per_epoch = samples_per_epoch * (tokens_per_sample + 1)
-
-        start = tokens_per_epoch if split == "train" else 0
-        end = len(memmap) if split == "train" else tokens_per_epoch
-
-        max_offset = end - tokens_per_epoch
+        max_offset = len(memmap) - tokens_per_sample
 
         self.memmap = memmap
         self.tokens_per_sample = tokens_per_sample
-        self.samples_per_epoch = samples_per_epoch
-        self.start = start
         self.max_offset = max_offset
 
     def tokenize(self, sample: dict) -> dict:
@@ -135,97 +117,37 @@ class Fineweb(IterableDataset):
             "tokens": tokens,
         }
 
-    def __iter__(self):
-        start = random.randint(self.start, self.max_offset)
+    def change_step_offset(self, step: int) -> None:
+        """Set the step offset for sampling from the dataset."""
 
-        for _ in range(self.samples_per_epoch):
-            end = start + self.tokens_per_sample
+        assert step >= 0, "Step offset must be non-negative"
 
-            x = self.memmap[start:end]
-            y = self.memmap[start + 1 : end + 1]
+        self.step_offset = step
 
-            x = x.astype(np.int64)
-            y = y.astype(np.int64)
+    def __getitem__(self, index: int) -> tuple[ndarray, ndarray]:
+        offset = self.step_offset + index
 
-            assert x.shape == y.shape, "Sample / label shape mismatch"
+        assert offset < self.max_offset, "Index out of bounds"
 
-            yield x, y
+        start: int = offset * self.tokens_per_sample
+        end: int = start + self.tokens_per_sample
 
-            start += self.tokens_per_sample
+        x = self.memmap[start:end]
+        y = self.memmap[start + 1 : end + 1]
 
-
-class ChatMLTokenizer:
-    """Tokenizer for multi-turn ChatML-formatted messages."""
-
-    def __init__(
-        self,
-        tokenizer: Encoding,
-        max_tokens_per_sample: int = 1024,
-    ):
-        if max_tokens_per_sample < 1:
-            raise ValueError(
-                f"Max tokens per sample must be greater than 0, {max_tokens_per_sample} given."
-            )
-
-        response_header_tokens = tokenizer.encode(
-            RESPONSE_HEADER, allowed_special="all"
-        )
-
-        response_header_length = len(response_header_tokens)
-
-        self.tokenizer = tokenizer
-        self.max_tokens_per_sample = max_tokens_per_sample
-        self.response_header_length = response_header_length
-
-    def tokenize_messages(self, messages: list[dict]) -> tuple[Tensor, Tensor]:
-        sample, labels = [], []
-
-        total_tokens, has_completion = 0, False
-
-        for message in messages:
-            is_completion = message["role"] == "assistant"
-
-            text = CHATML_TEMPLATE.format(
-                role=message["role"],
-                message=message["content"],
-            )
-
-            tokens = self.tokenizer.encode(text, allowed_special="all")
-
-            total_tokens += len(tokens)
-
-            sample.extend(tokens)
-
-            if is_completion:
-                labels.extend([IGNORE_INDEX] * self.response_header_length)
-
-                labels.extend(tokens[self.response_header_length :])
-
-                has_completion = True
-            else:
-                labels.extend([IGNORE_INDEX] * len(tokens))
-
-            if total_tokens > self.max_tokens_per_sample:
-                break
-
-        if not has_completion:
-            warnings.warn(
-                "No completion found in sample, training may be unstable. "
-                "Increase max_tokens_per_sample to avoid this warning."
-            )
-
-        sample = sample[: self.max_tokens_per_sample + 1]
-        labels = labels[: self.max_tokens_per_sample + 1]
-
-        sample = sample[:-1]
-        labels = labels[1:]
-
-        x = torch.tensor(sample, dtype=torch.int64)
-        y = torch.tensor(labels, dtype=torch.int64)
+        x = x.astype(np.int64)
+        y = y.astype(np.int64)
 
         assert x.shape == y.shape, "Sample / label shape mismatch"
 
         return x, y
+
+    def __len__(self):
+        n = len(self.memmap) // self.tokens_per_sample
+
+        n -= self.step_offset
+
+        return n
 
 
 class SmolTalk(Dataset):

@@ -100,7 +100,7 @@ class NoPEGPT(Module):
 
         if k <= 0:
             return
-        
+
         for layer in self.decoder[-k:]:
             for param in layer.parameters():
                 param.requires_grad = True
@@ -566,9 +566,7 @@ class LoRA(Module):
 
         return cls(in_features, out_features, rank, alpha)
 
-    def __init__(
-        self, in_features: int, out_features: int, rank: int, alpha: float
-    ):
+    def __init__(self, in_features: int, out_features: int, rank: int, alpha: float):
         super().__init__()
 
         assert rank > 0, "Rank must be greater than 0."
