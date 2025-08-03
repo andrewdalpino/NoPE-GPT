@@ -77,21 +77,19 @@ torchrun --standalone --nnodes=1 --nproc-per-node=8 pretrain.py --batch_size=16 
 | --batch_size | 2 | int | The number of samples of size `tokens_per_sample` to pass through the network at a time. |
 | --gradient_accumulation_steps | 128 | int | The number of batches to pass through the network before updating the model weights. |
 | --tokens_per_sample | 1024 | int | The number of tokens to pack into a single training sequence. This is sometimes called the block size or context length. |
-| --samples_per_epoch | 4096 | int | The number of training samples to pass through the network every epoch. |
-| --num_epochs | 1690 | int | The number of epochs to train for. |
 | --learning_rate | 1e-2 | float | The learning rate of the Adafactor optimizer. |
-| --rms_decay | -0.8 | float | The decay rate of the RMS coefficient of the Adafactor optimizer. |
 | --low_memory_optimizer | False | bool | Should the optimizer reduce its memory consumption in exchange for a slightly slower runtime? |
 | --max_gradient_norm | 1.0 | float | Clip gradients above this threshold norm before stepping. |
-| --eval_interval | 10 | int | Evaluate the model after this many epochs on the testing set. |
+| --eval_interval | 100 | int | Evaluate the model after this many epochs on the testing set. |
 | --embedding_dimensions | 1024 | int | The dimensionality of the token embeddings. |
-| --num_attention_heads | 16 | int | The number of attention heads within every attention layer. |
-| --num_hidden_layers | 24 | int | The number of attention/MLP blocks within the body of the network. |
+| --num_q_heads | 16 | int | The number of query heads within every attention layer. |
+| --num_kv_heads | 4 | int | The number of key and value heads within every attention layer. |
+| --num_hidden_layers | 16 | int | The number of attention/MLP blocks within the body of the network. |
 | --feed_forward_ratio | 4 | (1, 2, 4) | The ratio of hidden neurons to embedding dimensions in the MLP layers of the network. |
-| --dropout | 0.1 | float | The proportion of signals to send to zero during training as regularization. |
+| --dropout | 0.0 | float | The proportion of signals to send to zero during training as regularization. |
 | --activation_checkpointing | False | bool | Should we use activation checkpointing? This will drastically reduce memory utilization during training at the cost of recomputing the forward pass. |
 | --ddp_sharding_level | 2 | int | The level of sharding to use for DDP training. Options are 2 or 3 for partial and full sharding respectively, or 0 for no sharding. |
-| --checkpoint_interval | 20 | int | Save the model checkpoint to disk every this many epochs. |
+| --checkpoint_interval | 100 | int | Save the model checkpoint to disk every this many epochs. |
 | --checkpoint_path | "./checkpoints/checkpoint.pt" | str | The path to the base checkpoint file on disk. |
 | --resume | False | bool | Should we resume training from the last checkpoint? |
 | --run_dir_path | "./runs/pretrain" | str | The path to the TensorBoard run directory for this training session. |

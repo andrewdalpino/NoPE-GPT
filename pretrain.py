@@ -10,7 +10,8 @@ from functools import partial
 
 import torch
 
-from torch.utils.data import DataLoader
+from torch.utils.data import DataLoader, SequentialSampler
+from torch.utils.data.distributed import DistributedSampler
 from torch.nn import CrossEntropyLoss
 from torch.optim import Adafactor
 from torch.amp import autocast
@@ -20,6 +21,8 @@ from torch.distributed import init_process_group, destroy_process_group
 from torch.distributed.fsdp import FullyShardedDataParallel, ShardingStrategy
 from torch.utils.data import random_split
 from torch.utils.tensorboard import SummaryWriter
+
+from torchdata.stateful_dataloader import StatefulDataLoader
 
 from torchmetrics.text import Perplexity
 
@@ -66,13 +69,13 @@ def main():
     parser.add_argument("--embedding_dimensions", default=1024, type=int)
     parser.add_argument("--num_q_heads", default=16, type=int)
     parser.add_argument("--num_kv_heads", default=4, type=int)
-    parser.add_argument("--num_decoder_layers", default=20, type=int)
+    parser.add_argument("--num_decoder_layers", default=16, type=int)
     parser.add_argument("--hidden_ratio", default=4, choices={1, 2, 4}, type=int)
     parser.add_argument("--activation_checkpointing", action="store_true")
     parser.add_argument("--dropout", default=0.0, type=float)
-    parser.add_argument("--eval_interval", default=20, type=int)
+    parser.add_argument("--eval_interval", default=100, type=int)
     parser.add_argument("--num_eval_samples", default=2048, type=int)
-    parser.add_argument("--checkpoint_interval", default=20, type=int)
+    parser.add_argument("--checkpoint_interval", default=100, type=int)
     parser.add_argument(
         "--checkpoint_path", default="./checkpoints/checkpoint.pt", type=str
     )
@@ -125,18 +128,6 @@ def main():
             args.gradient_accumulation_steps > 0
         ), "World size is larger than the number of gradient accumulation steps."
 
-        if args.samples_per_epoch % WORLD_SIZE != 0:
-            warnings.warn(
-                "Number of samples per epoch does not"
-                "divide evenly into the world size."
-            )
-
-        args.samples_per_epoch //= WORLD_SIZE
-
-        assert (
-            args.samples_per_epoch > 0
-        ), "World size is larger than the number of samples per epoch."
-
         if args.seed:
             args.seed += RANK
 
@@ -171,6 +162,26 @@ def main():
     n_train_samples = len(dataset) - args.num_eval_samples
 
     training, testing = random_split(dataset, [n_train_samples, args.num_eval_samples])
+
+    if IS_DDP:
+        sampler = DistributedSampler(
+            training,
+            num_replicas=WORLD_SIZE,
+            rank=RANK,
+        )
+    else:
+        sampler = SequentialSampler(training)
+
+    train_loader = StatefulDataLoader(
+        training,
+        batch_size=args.batch_size,
+        sampler=sampler,
+        pin_memory="cpu" not in args.device,
+    )
+
+    test_loader = DataLoader(
+        testing, batch_size=args.batch_size, pin_memory="cpu" not in args.device
+    )
 
     model_args = {
         "vocabulary_size": tokenizer.n_vocab,
@@ -221,10 +232,10 @@ def main():
             args.checkpoint_path, map_location="cpu", weights_only=False
         )  # Always load into CPU RAM first to prevent CUDA out-of-memory errors.
 
+        train_loader.load_state_dict(checkpoint["train_loader"])
+
         model.load_state_dict(checkpoint["model"])
         optimizer.load_state_dict(checkpoint["optimizer"])
-
-        training.change_step_offset(checkpoint["step"])
 
         step += checkpoint["step"]
 
@@ -236,16 +247,9 @@ def main():
 
     print(f"Model has {model.num_trainable_params:,} trainable parameters")
 
-    train_loader = DataLoader(
-        training, batch_size=args.batch_size, pin_memory="cpu" not in args.device
-    )
-    test_loader = DataLoader(
-        testing, batch_size=args.batch_size, pin_memory="cpu" not in args.device
-    )
-
     loss_function = CrossEntropyLoss(ignore_index=IGNORE_INDEX)
 
-    perplexity_metric = Perplexity().to(args.device)
+    perplexity_metric = Perplexity(ignore_index=IGNORE_INDEX).to(args.device)
 
     register_signal_handlers()
 
@@ -338,6 +342,7 @@ def main():
                 checkpoint = {
                     "step": step,
                     "tokenizer": tokenizer,
+                    "train_loader": train_loader.state_dict(),
                     "model_args": model_args,
                     "model": model.state_dict(),
                     "optimizer": optimizer.state_dict(),

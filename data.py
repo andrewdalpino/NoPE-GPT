@@ -30,8 +30,6 @@ class Fineweb(Dataset):
 
     SUBSETS = frozenset({"sample-10BT", "sample-100BT", "sample-350BT"})
 
-    step_offset: int = 0
-
     def __init__(
         self,
         tokenizer: Encoding,
@@ -102,7 +100,7 @@ class Fineweb(Dataset):
 
         memmap = np.memmap(bin_path, dtype=np.uint16, mode="r")
 
-        max_offset = len(memmap) - tokens_per_sample
+        max_offset = len(memmap) // tokens_per_sample
 
         self.memmap = memmap
         self.tokens_per_sample = tokens_per_sample
@@ -117,19 +115,10 @@ class Fineweb(Dataset):
             "tokens": tokens,
         }
 
-    def change_step_offset(self, step: int) -> None:
-        """Set the step offset for sampling from the dataset."""
+    def __getitem__(self, index: int):
+        assert index < self.max_offset, "Offset out of bounds"
 
-        assert step >= 0, "Step offset must be non-negative"
-
-        self.step_offset = step
-
-    def __getitem__(self, index: int) -> tuple[ndarray, ndarray]:
-        offset = self.step_offset + index
-
-        assert offset < self.max_offset, "Index out of bounds"
-
-        start: int = offset * self.tokens_per_sample
+        start: int = index * self.tokens_per_sample
         end: int = start + self.tokens_per_sample
 
         x = self.memmap[start:end]
@@ -143,11 +132,7 @@ class Fineweb(Dataset):
         return x, y
 
     def __len__(self):
-        n = len(self.memmap) // self.tokens_per_sample
-
-        n -= self.step_offset
-
-        return n
+        return self.max_offset
 
 
 class SmolTalk(Dataset):
