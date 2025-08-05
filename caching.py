@@ -17,10 +17,11 @@ class KVCache(Module):
                 DynamicKVBlock(
                     batch_size,
                     layer.attention.embedding_dimensions,
-                    layer.attention.num_heads,
+                    layer.attention.num_q_heads,
+                    layer.attention.num_kv_heads,
                     context_length,
                 )
-                for layer in model.body
+                for layer in model.decoder
             ]
         )
 
@@ -35,36 +36,25 @@ class DynamicKVBlock(Module):
         self,
         batch_size: int,
         embedding_dimensions: int,
-        num_heads: int,
+        num_q_heads: int,
+        num_kv_heads: int,
         context_length: int,
     ):
         super().__init__()
 
-        if batch_size <= 0:
-            raise ValueError(f"Batch size must be greater than 0, {batch_size} given.")
+        assert batch_size > 0, "Batch size must be positive."
+        assert embedding_dimensions > 0, "Embedding dimensions must be positive."
+        assert num_kv_heads > 0, "Number of key-value heads must be positive."
+        assert context_length > 0, "Context length must be positive."
 
-        if embedding_dimensions <= 0:
-            raise ValueError(
-                f"Embedding dimensions must be greater than 0, {embedding_dimensions} given."
-            )
+        assert (
+            embedding_dimensions % num_kv_heads == 0
+        ), "Embedding dimensions must be divisible by number of key-value heads."
 
-        if num_heads <= 0:
-            raise ValueError(f"Num heads must be greater than 0, {num_heads} given.")
+        head_dimensions: int = embedding_dimensions // num_q_heads
 
-        if embedding_dimensions % num_heads != 0:
-            raise ValueError(
-                f"Embedding dimensions must be divisible by num heads, {embedding_dimensions} and {num_heads} given."
-            )
-
-        if context_length <= 0:
-            raise ValueError(
-                f"Context length must be greater than 0, {context_length} given."
-            )
-
-        head_dimensions: int = embedding_dimensions // num_heads
-
-        k_cache = torch.empty(batch_size, num_heads, 0, head_dimensions)
-        v_cache = torch.empty(batch_size, num_heads, 0, head_dimensions)
+        k_cache = torch.empty(batch_size, num_kv_heads, 0, head_dimensions)
+        v_cache = torch.empty(batch_size, num_kv_heads, 0, head_dimensions)
 
         self.k_cache = Buffer(k_cache, persistent=False)
         self.v_cache = Buffer(v_cache, persistent=False)

@@ -554,7 +554,7 @@ class InvertedBottleneck(Module):
         z = self.silu.forward(z)
         z = self.linear2.forward(z)
 
-        return
+        return z
 
 
 class LoRA(Module):

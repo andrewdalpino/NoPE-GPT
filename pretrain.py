@@ -177,10 +177,15 @@ def main():
         batch_size=args.batch_size,
         sampler=sampler,
         pin_memory="cpu" not in args.device,
+        snapshot_every_n_steps=args.gradient_accumulation_steps,
+        num_workers=args.num_dataset_processes,
     )
 
     test_loader = DataLoader(
-        testing, batch_size=args.batch_size, pin_memory="cpu" not in args.device
+        testing,
+        batch_size=args.batch_size,
+        pin_memory="cpu" not in args.device,
+        num_workers=args.num_dataset_processes,
     )
 
     model_args = {
