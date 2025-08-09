@@ -1,3 +1,5 @@
+import warnings
+
 from os import path, remove as delete_file
 from functools import partial
 
@@ -7,13 +9,13 @@ from tiktoken import Encoding
 
 import numpy as np
 
-from numpy import ndarray
+import torch
 
 from torch import Tensor
 from torch.utils.data import Dataset
 from torch.nn.utils.rnn import pad_sequence
 
-from tokenization import ChatMLTokenizer
+from src.nope_gpt.tokenization import ChatMLTokenizer
 
 from tqdm import tqdm
 
@@ -39,12 +41,13 @@ class Fineweb(Dataset):
     ):
         super().__init__()
 
-        if subset is not None:
-            if subset not in self.SUBSETS:
-                raise ValueError(f"Invalid subset, {subset} given.")
+        assert subset is None or subset in self.SUBSETS, (
+            f"Invalid subset, {subset} given. " f"Valid subsets are: {self.SUBSETS}"
+        )
 
-        if tokens_per_sample < 1:
-            raise ValueError(f"Tokens per sample must be greater than 0.")
+        assert (
+            tokens_per_sample > 0
+        ), f"Tokens per sample must be greater than 0, {tokens_per_sample} given."
 
         dataset_name = f"fineweb-{subset}" if subset is not None else "fineweb"
 
@@ -53,13 +56,17 @@ class Fineweb(Dataset):
         self.tokenizer = tokenizer
 
         if not path.exists(bin_path):
-            tokenized_dataset = load_dataset(
+            dataset = load_dataset(
                 self.DATASET_NAME,
                 name=subset,
                 split="train",
                 streaming=True,
-            ).map(
+            )
+
+            tokenized_dataset = dataset.map(
                 self.tokenize,
+                remove_columns=["text"],
+                desc="Tokenizing Fineweb dataset",
             )
 
             temp_path = bin_path + ".temp"
@@ -135,7 +142,7 @@ class Fineweb(Dataset):
         return self.max_offset
 
 
-class SmolTalk(Dataset):
+class SmolTalk("ChatMLDataset"):
     """
     The SmolTalk dataset by HuggingFace formatted as ChatML messages for supervised instruction tuning.
     """
@@ -164,21 +171,26 @@ class SmolTalk(Dataset):
     def __init__(
         self,
         tokenizer: ChatMLTokenizer,
-        subset: str = "all",
+        subset: str,
+        max_tokens_per_sample: int,
     ):
-        super().__init__()
+        super().__init__(tokenizer, max_tokens_per_sample)
 
-        if subset not in self.SUBSETS:
-            raise ValueError(f"Invalid subset, {subset} given.")
-
-        self.tokenizer = tokenizer
+        assert subset in self.SUBSETS, (
+            f"Invalid subset, {subset} given. " f"Valid subsets are: {self.SUBSETS}"
+        )
 
         self.dataset = load_dataset(self.DATASET_NAME, subset, split="train")
 
     def __getitem__(self, index: int):
         messages = self.dataset[index]["messages"]
 
-        x, y = self.tokenizer.tokenize_messages(messages)
+        sample, labels = self.tokenize_messages(messages)
+
+        x = torch.tensor(sample, dtype=torch.int64)
+        y = torch.tensor(labels, dtype=torch.int64)
+
+        assert x.shape == y.shape, "Sample / label shape mismatch"
 
         return x, y
 
@@ -186,7 +198,7 @@ class SmolTalk(Dataset):
         return len(self.dataset)
 
 
-class UltraFeedbackSFT(Dataset):
+class UltraFeedbackSFT("ChatMLDataset"):
     """
     The binarized version of the UltraFeedback dataset for human preference alignment via SFT.
     """
@@ -196,14 +208,14 @@ class UltraFeedbackSFT(Dataset):
     def __init__(
         self,
         tokenizer: ChatMLTokenizer,
-        split: str = "train",
+        split: str,
+        max_tokens_per_sample: int,
     ):
-        super().__init__()
+        super().__init__(tokenizer, max_tokens_per_sample)
 
-        if split not in {"train", "test"}:
-            raise ValueError(f"Split must be either train or test, {split} given.")
-
-        self.tokenizer = tokenizer
+        assert split in {"train", "test"}, (
+            f"Invalid split, {split} given. " f"Valid splits are: 'train', 'test'."
+        )
 
         new_dataset = partial(load_dataset, name=self.DATASET_NAME)
 
@@ -215,12 +227,74 @@ class UltraFeedbackSFT(Dataset):
     def __getitem__(self, index: int):
         messages = self.dataset[index]["messages"]
 
-        x, y = self.tokenizer.tokenize_messages(messages)
+        sample, labels = self.tokenize_messages(messages)
+
+        x = torch.tensor(sample, dtype=torch.int64)
+        y = torch.tensor(labels, dtype=torch.int64)
+
+        assert x.shape == y.shape, "Sample / label shape mismatch"
 
         return x, y
 
     def __len__(self):
         return len(self.dataset)
+
+
+class ChatMLDataset(Dataset):
+    """Base class for datasets with samples formatted as ChatML messages."""
+
+    IGNORE_INDEX = -100
+
+    def __init__(self, tokenizer: ChatMLTokenizer, max_tokens_per_sample: int):
+        assert max_tokens_per_sample > 0, "max_tokens_per_sample must be positive"
+
+        response_header_tokens = tokenizer.encode(
+            self.RESPONSE_HEADER, allowed_special="all"
+        )
+
+        response_header_length = len(response_header_tokens)
+
+        self.tokenizer = tokenizer
+        self.max_tokens_per_sample = max_tokens_per_sample
+        self.response_header_length = response_header_length
+
+    def tokenize_messages(self, messages: list[dict]) -> tuple[list, list]:
+        sample, labels = [], []
+
+        total_tokens = 0
+        has_completion = False
+
+        for message in messages:
+            tokens = self.tokenizer.tokenize_message(message)
+
+            total_tokens += len(tokens)
+
+            if total_tokens > 1 + self.max_tokens_per_sample:
+                break
+
+            sample.extend(tokens)
+
+            is_completion = message["role"] == "assistant"
+
+            if is_completion:
+                labels.extend([self.IGNORE_INDEX] * self.response_header_length)
+
+                labels.extend(tokens[self.response_header_length :])
+
+                has_completion = True
+            else:
+                labels.extend([self.IGNORE_INDEX] * len(tokens))
+
+        if not has_completion:
+            warnings.warn(
+                "No completion found in sample, training may be unstable. "
+                "Filter or increase max_tokens_per_sample to avoid this warning."
+            )
+
+        sample = sample[:-1]
+        labels = labels[1:]
+
+        return sample, labels
 
 
 def pad_collate(

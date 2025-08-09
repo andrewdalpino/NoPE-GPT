@@ -39,7 +39,6 @@ def main():
     parser.add_argument(
         "--dataset_subsets", default=["all", "ultra-feedback"], type=csv_list
     )
-    parser.add_argument("--num_dataset_processes", default=1, type=int)
     parser.add_argument("--max_tokens_per_sample", default=2048, type=int)
     parser.add_argument("--batch_size", default=2, type=int)
     parser.add_argument("--gradient_accumulation_steps", default=128, type=int)
@@ -124,35 +123,16 @@ def main():
         args.base_checkpoint_path, map_location=args.device, weights_only=False
     )
 
-    tokenizer = checkpoint["tokenizer"]
-
-    im_start_index = tokenizer.n_vocab
-    im_end_index = tokenizer.n_vocab + 1
-
-    tokenizer = Encoding(
-        name=tokenizer.name,
-        pat_str=tokenizer._pat_str,
-        mergeable_ranks=tokenizer._mergeable_ranks,
-        special_tokens={
-            **tokenizer._special_tokens,
-            "<|im_start|>": im_start_index,
-            "<|im_end|>": im_end_index,
-        },
-    )
-
-    chatml_tokenizer = ChatMLTokenizer(
-        tokenizer,
-        max_tokens_per_sample=args.max_tokens_per_sample,
-    )
+    tokenizer = ChatMLTokenizer(checkpoint["tokenizer"])
 
     datasets = []
 
     for subset in frozenset(args.dataset_subsets):
         if subset in SmolTalk.SUBSETS:
-            datasets.append(SmolTalk(chatml_tokenizer, subset=subset))
+            datasets.append(SmolTalk(tokenizer, subset=subset))
 
         if subset == "ultra-feedback":
-            datasets.append(UltraFeedbackSFT(chatml_tokenizer, split="train"))
+            datasets.append(UltraFeedbackSFT(tokenizer, split="train"))
 
     dataset = ConcatDataset(datasets)
 
@@ -167,11 +147,10 @@ def main():
         collate_fn=right_pad_collate,
         batch_size=args.batch_size,
         pin_memory="cpu" not in args.device,
-        num_workers=args.num_dataset_processes,
     )
 
-    train_loader = new_dataloader(training, shuffle=True, drop_last=True)
-    test_loader = new_dataloader(testing, shuffle=False)
+    train_loader = new_dataloader(training, shuffle=True)
+    test_loader = new_dataloader(testing)
 
     model_args = checkpoint["model_args"]
 
@@ -189,7 +168,7 @@ def main():
 
     model.freeze_model_parameters()
     model.unfreeze_token_embeddings()
-    model.add_token_embeddings(2)
+    model.resize_token_embeddings(tokenizer.vocabulary_size)
 
     lora_args = {
         "rank": args.rank,

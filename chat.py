@@ -2,8 +2,6 @@ import random
 
 from functools import partial
 from argparse import ArgumentParser
-from itertools import chain
-import copy
 
 import torch
 
@@ -11,14 +9,16 @@ from torch.cuda import is_available as cuda_is_available
 
 from colored import fore_rgb, style
 
-from model import NoPEGPT
-from tokenization import ChatMLTokenizer
-from memory import ShortTermMemory
+from src.nope_gpt.model import NoPEGPT
+from memory import BufferWindowMemory
 
 DEFAULT_SYSTEM_MESSAGE = (
     "You're a helpful AI assistant named NoPEGPT. "
     "Your job is to chat and answer questions as accurately as possible. "
+    "If you don't know the answer, say 'I don't know'. "
 )
+
+RESPONSE_HEADER = "<|im_start|>assistant\n"
 
 WHITE = (255, 255, 255)
 
@@ -40,6 +40,7 @@ def main():
     parser.add_argument("--top_p", default=0.9, type=float)
     parser.add_argument("--repeat_penalty", default=0.1, type=float)
     parser.add_argument("--repeat_window", default=50, type=int)
+    parser.add_argument("--max_message_history", default=4, type=int)
     parser.add_argument("--device", default="cuda", type=str)
     parser.add_argument("--seed", default=None, type=int)
 
@@ -58,35 +59,21 @@ def main():
         args.base_checkpoint_path, map_location=args.device, weights_only=False
     )
 
+    tokenizer = checkpoint["tokenizer"]
+
     model = NoPEGPT(**checkpoint["model_args"])
 
-    model = torch.compile(model)
+    model.resize_token_embeddings(tokenizer.vocabulary_size)
+
+    model.add_lora_parameters(**checkpoint["lora_args"])
 
     model.load_state_dict(checkpoint["model"])
 
-    print("Model checkpoint loaded")
-
-    checkpoint = torch.load(
-        args.lora_checkpoint_path, map_location=args.device, weights_only=False
-    )
-
-    tokenizer = checkpoint["tokenizer"]
-
-    im_end_token = tokenizer.encode_single_token("<|im_end|>")
-    eot_token = tokenizer.eot_token
-
-    stop_tokens = frozenset({im_end_token, eot_token})
-
-    model.resize_token_embeddings(tokenizer.n_vocab)
-    model.token_embeddings.load_state_dict(checkpoint["token_embeddings"])
-
-    model.add_lora_parameters(**checkpoint["lora_args"])
-    model.load_state_dict(checkpoint["lora"], strict=False)
     model.merge_lora_parameters()
 
-    print("LoRA checkpoint loaded")
-
     model.to(args.device)
+
+    print("Model checkpoint loaded")
 
     model.eval()
 
@@ -95,21 +82,12 @@ def main():
     if not system_message:
         system_message = DEFAULT_SYSTEM_MESSAGE
 
-    system_message = ChatMLTokenizer.CHATML_TEMPLATE.format(
-        role="system", message=system_message
-    )
+    system_message = {
+        "role": "system",
+        "content": system_message,
+    }
 
-    system_message = tokenizer.encode(system_message, allowed_special="all")
-
-    response_header = tokenizer.encode(
-        ChatMLTokenizer.RESPONSE_HEADER, allowed_special="all"
-    )
-
-    newline_token = tokenizer.encode_single_token("\n")
-
-    max_token_history = args.context_length - len(system_message)
-
-    memory = ShortTermMemory(max_tokens=max_token_history)
+    memory = BufferWindowMemory(args.max_message_history)
 
     generate = partial(
         model.generate,
@@ -123,37 +101,21 @@ def main():
     )
 
     while True:
-        print(f"Short-term memory utilization: {memory.utilization:.2%}")
-
         instruction = input("Enter a prompt: ")
 
-        instruction_message = ChatMLTokenizer.CHATML_TEMPLATE.format(
-            role="user", message=instruction
-        )
+        instruction_message = {
+            "role": "user",
+            "content": instruction,
+        }
 
-        instruction_message = tokenizer.encode(
-            instruction_message, allowed_special="all"
-        )
-
-        prompt = chain(
-            system_message,
-            memory.get_history(),
-            instruction_message,
-            response_header,
-        )
+        messages = [system_message] + memory.get_history() + [instruction_message]
 
         prompt = torch.tensor(list(prompt), dtype=torch.int64, device=args.device)
-
-        memory.add_message(instruction_message)
-
-        response_message = copy.copy(response_header)
 
         for token, probability in generate(prompt):
             token, probability = token.item(), probability.item()
 
-            response_message.append(token)
-
-            if token in stop_tokens:
+            if token == tokenizer.tokenizer.eot_token_id:
                 break
 
             if args.colorize_tokens:
@@ -170,8 +132,6 @@ def main():
             )
 
             print(f"{color}{out}{style("reset")}", end="", flush=True)
-
-        response_message.append(newline_token)
 
         print("\n")
 

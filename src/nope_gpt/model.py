@@ -22,12 +22,12 @@ from torch.nn.functional import softmax, scaled_dot_product_attention
 from torch.nn.utils.parametrize import register_parametrization, remove_parametrizations
 from torch.utils.checkpoint import checkpoint as torch_checkpoint
 
-from transformers import PretrainedConfig, PreTrainedModel
+from huggingface_hub import PyTorchModelHubMixin
 
 from src.nope_gpt.caching import KVCache, DynamicKVBlock
 
 
-class NoPEGPT(Module):
+class NoPEGPT(Module, PyTorchModelHubMixin):
     """A generative pretrained transformer with no positional embeddings."""
 
     def __init__(
@@ -42,13 +42,11 @@ class NoPEGPT(Module):
     ):
         super().__init__()
 
-        if vocabulary_size <= 0:
-            raise ValueError(
-                f"Vocabulary size must be greater than 0, {vocabulary_size} given."
-            )
-
-        if num_decoder_layers <= 0:
-            raise ValueError(f"Num decoder layers must be greater than 0.")
+        assert vocabulary_size > 0, "Vocabulary size must be greater than 0."
+        assert embedding_dimensions > 0, "Embedding dimensions must be greater than 0."
+        assert (
+            num_decoder_layers > 0
+        ), "Number of decoder layers must be greater than 0."
 
         token_embeddings = Embedding(vocabulary_size, embedding_dimensions)
 
@@ -111,12 +109,8 @@ class NoPEGPT(Module):
         self.token_embeddings.weight.requires_grad = True
 
     @torch.no_grad()
-    def add_token_embeddings(self, num_tokens: int) -> None:
-        """Resize the token embeddings to accommodate new tokens."""
-
-        assert num_tokens >= 0, "Vocabulary size must be greater than 0."
-
-        new_vocabulary_size = self.vocabulary_size + num_tokens
+    def resize_token_embeddings(self, new_vocabulary_size: int) -> None:
+        """Resize the token embeddings to a new vocabulary size."""
 
         new_embeddings = Embedding(new_vocabulary_size, self.embedding_dimensions)
         new_embeddings = new_embeddings.to(self.token_embeddings.weight.device)
@@ -145,13 +139,6 @@ class NoPEGPT(Module):
 
         for module in self.decoder:
             module.add_lora_adapters(rank, alpha)
-
-    def lora_state_dict(self) -> dict[str, Tensor]:
-        """Return a state dict containing only the LoRA parameters."""
-
-        return {
-            name: module for name, module in self.state_dict().items() if "lora" in name
-        }
 
     def merge_lora_parameters(self) -> None:
         """Merge the LoRA parameters with the original parameters."""
@@ -270,59 +257,6 @@ class NoPEGPT(Module):
             prompt = next_token.unsqueeze(0)
 
         return num_tokens
-
-
-class NoPEGPTHuggingFaceConfig(PretrainedConfig):
-    """Provide a monolithic configuration object to enable compatibility with HuggingFace Transformers API."""
-
-    model_type = "nope-gpt"
-
-    def __init__(
-        self,
-        vocabulary_size: int,
-        embedding_dimensions: int,
-        num_q_heads: int,
-        num_kv_heads: int,
-        num_decoder_layers: int,
-        hidden_ratio: int,
-        dropout: float,
-        **kwargs,
-    ):
-        self.vocabulary_size = vocabulary_size
-        self.embedding_dimensions = embedding_dimensions
-        self.num_q_heads = num_q_heads
-        self.num_kv_heads = num_kv_heads
-        self.num_decoder_layers = num_decoder_layers
-        self.hidden_ratio = hidden_ratio
-        self.dropout = dropout
-
-        super().__init__(**kwargs)
-
-
-class NoPEGPTHuggingFaceModel(PreTrainedModel):
-    """Wrap model to enable compatibility with HuggingFace Transformers API."""
-
-    config_class = NoPEGPTHuggingFaceConfig
-
-    def __init__(self, config: NoPEGPTHuggingFaceConfig):
-        super().__init__(config)
-
-        self.model = NoPEGPT(
-            config.vocabulary_size,
-            config.embedding_dimensions,
-            config.num_q_heads,
-            config.num_kv_heads,
-            config.num_decoder_layers,
-            config.hidden_ratio,
-            config.dropout,
-        )
-
-    def forward(self, x: Tensor) -> dict[str, Tensor]:
-        logits = self.model.forward(x)
-
-        return {
-            "logits": logits,
-        }
 
 
 class DecoderBlock(Module):
