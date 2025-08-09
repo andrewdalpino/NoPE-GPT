@@ -5,46 +5,39 @@ from itertools import chain
 from typing import Iterator, Deque
 
 
-class ShortTermMemory:
+class BufferWindowMemory:
     """A simple in-memory short-term memory store for interactive chat sessions."""
 
-    def __init__(self, max_tokens: int):
-        self.messages: Deque[list[int]] = deque()
+    def __init__(self, max_messages: int):
+        """Initialize the memory buffer with a maximum number of messages.
 
-        self.max_tokens: int = max_tokens
-        self.total_tokens: int = 0
-
-    @property
-    def utilization(self) -> float:
-        """Calculate the current memory utilization.
-
-        Returns:
-            float: The percentage of memory used.
+        Args:
+            max_messages (int): The maximum number of messages to store in memory.
         """
 
-        return self.total_tokens / self.max_tokens
+        assert max_messages > 0, "Maximum messages must be positive."
 
-    def add_message(self, message: list[int]):
+        self.messages: Deque[str] = deque()
+
+        self.max_messages: int = max_messages
+
+    def add_message(self, message: str) -> None:
         """Add a message to the chat history.
 
         Args:
-            message (list[int]): The token-encoded message to add.
+            message (str): The message to add to the chat history.
         """
 
         self.messages.append(message)
 
-        self.total_tokens += len(message)
+        while len(self.messages) > self.max_messages:
+            _ = self.messages.popleft()
 
-        while self.total_tokens > self.max_tokens:
-            old_message = self.messages.popleft()
-
-            self.total_tokens -= len(old_message)
-
-    def get_history(self) -> Iterator[int]:
+    def get_history(self) -> Iterator[str]:
         """Return the most recent chat history.
 
         Returns:
-            Iterator[int]: An iterator over the chat history.
+            Iterator[str]: An iterator over the chat history.
         """
 
         return chain.from_iterable(self.messages)

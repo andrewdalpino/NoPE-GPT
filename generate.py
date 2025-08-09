@@ -9,7 +9,7 @@ from torch.cuda import is_available as cuda_is_available
 
 from colored import fore_rgb, style
 
-from model import NoPEGPT
+from src.nope_gpt.model import NoPEGPT
 
 WHITE = (255, 255, 255)
 
@@ -24,7 +24,7 @@ def main():
     )
     parser.add_argument("--max_tokens", default=2000, type=int)
     parser.add_argument("--colorize_tokens", action="store_true")
-    parser.add_argument("--context_length", default=1024, type=int)
+    parser.add_argument("--context_length", default=2048, type=int)
     parser.add_argument("--temperature", default=0.9, type=float)
     parser.add_argument("--top_k", default=500, type=int)
     parser.add_argument("--top_p", default=0.9, type=float)

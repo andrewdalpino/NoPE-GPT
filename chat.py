@@ -12,7 +12,7 @@ from torch.cuda import is_available as cuda_is_available
 from colored import fore_rgb, style
 
 from model import NoPEGPT
-from data import CHATML_TEMPLATE, RESPONSE_HEADER
+from tokenization import ChatMLTokenizer
 from memory import ShortTermMemory
 
 DEFAULT_SYSTEM_MESSAGE = (
@@ -32,9 +32,9 @@ def main():
     parser.add_argument(
         "--lora_checkpoint_path", default="./checkpoints/instruct.pt", type=str
     )
-    parser.add_argument("--max_tokens", default=500, type=int)
+    parser.add_argument("--max_tokens", default=2000, type=int)
     parser.add_argument("--colorize_tokens", action="store_true")
-    parser.add_argument("--context_length", default=1024, type=int)
+    parser.add_argument("--context_length", default=2048, type=int)
     parser.add_argument("--temperature", default=0.7, type=float)
     parser.add_argument("--top_k", default=500, type=int)
     parser.add_argument("--top_p", default=0.9, type=float)
@@ -95,11 +95,15 @@ def main():
     if not system_message:
         system_message = DEFAULT_SYSTEM_MESSAGE
 
-    system_message = CHATML_TEMPLATE.format(role="system", message=system_message)
+    system_message = ChatMLTokenizer.CHATML_TEMPLATE.format(
+        role="system", message=system_message
+    )
 
     system_message = tokenizer.encode(system_message, allowed_special="all")
 
-    response_header = tokenizer.encode(RESPONSE_HEADER, allowed_special="all")
+    response_header = tokenizer.encode(
+        ChatMLTokenizer.RESPONSE_HEADER, allowed_special="all"
+    )
 
     newline_token = tokenizer.encode_single_token("\n")
 
@@ -123,7 +127,9 @@ def main():
 
         instruction = input("Enter a prompt: ")
 
-        instruction_message = CHATML_TEMPLATE.format(role="user", message=instruction)
+        instruction_message = ChatMLTokenizer.CHATML_TEMPLATE.format(
+            role="user", message=instruction
+        )
 
         instruction_message = tokenizer.encode(
             instruction_message, allowed_special="all"

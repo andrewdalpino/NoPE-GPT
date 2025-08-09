@@ -24,7 +24,7 @@ from torch.utils.checkpoint import checkpoint as torch_checkpoint
 
 from transformers import PretrainedConfig, PreTrainedModel
 
-from caching import KVCache, DynamicKVBlock
+from src.nope_gpt.caching import KVCache, DynamicKVBlock
 
 
 class NoPEGPT(Module):
@@ -111,26 +111,24 @@ class NoPEGPT(Module):
         self.token_embeddings.weight.requires_grad = True
 
     @torch.no_grad()
-    def resize_token_embeddings(self, vocabulary_size: int) -> None:
-        """Resize the token embeddings to accommodate a new vocabulary size."""
+    def add_token_embeddings(self, num_tokens: int) -> None:
+        """Resize the token embeddings to accommodate new tokens."""
 
-        if vocabulary_size <= 0:
-            raise ValueError(
-                f"Vocabulary size must be greater than 0, {vocabulary_size} given."
-            )
+        assert num_tokens >= 0, "Vocabulary size must be greater than 0."
 
-        new_embeddings = Embedding(vocabulary_size, self.embedding_dimensions)
+        new_vocabulary_size = self.vocabulary_size + num_tokens
 
+        new_embeddings = Embedding(new_vocabulary_size, self.embedding_dimensions)
         new_embeddings = new_embeddings.to(self.token_embeddings.weight.device)
 
-        num_tokens_to_copy = min(vocabulary_size, self.token_embeddings.num_embeddings)
+        num_tokens_to_copy = min(new_vocabulary_size, self.vocabulary_size)
 
         new_embeddings.weight[:num_tokens_to_copy, :] = self.token_embeddings.weight[
             :num_tokens_to_copy, :
         ]
 
         # Initialize new embeddings with kaiming normal distribution.
-        for i in range(num_tokens_to_copy, vocabulary_size):
+        for i in range(num_tokens_to_copy, new_vocabulary_size):
             new_embeddings.weight[i] = torch.randn(self.embedding_dimensions) / sqrt(
                 self.embedding_dimensions
             )
@@ -140,7 +138,7 @@ class NoPEGPT(Module):
 
         self.output_layer.weight = self.token_embeddings.weight  # Retie weights
 
-        self.vocabulary_size = vocabulary_size
+        self.vocabulary_size = new_vocabulary_size
 
     def add_lora_parameters(self, rank: int, alpha: float) -> None:
         """Reparameterize the weights of the model using LoRA adapters."""
@@ -363,7 +361,11 @@ class DecoderBlock(Module):
         z = self.norm1.forward(x)
         z = self.attention.forward(z)
 
-        z = self.norm2.forward(z)
+        z = x + z  # Residual connection
+
+        x = z
+
+        z = self.norm2.forward(x)
         z = self.feedforward.forward(z)
 
         z = x + z  # Residual connection
@@ -377,7 +379,11 @@ class DecoderBlock(Module):
         z = self.norm1.forward(x)
         z = self.attention.predict(z, kv_block)
 
-        z = self.norm2.forward(z)
+        z = x + z  # Residual connection
+
+        x = z
+
+        z = self.norm2.forward(x)
         z = self.feedforward.predict(z)
 
         z = x + z  # Residual connection
@@ -386,7 +392,7 @@ class DecoderBlock(Module):
 
 
 class SelfAttention(Module):
-    """Group query self-attention with causal masking."""
+    """Group query self-attention with causal masking for next-token prediction objective."""
 
     def __init__(
         self,
@@ -405,8 +411,6 @@ class SelfAttention(Module):
             embedding_dimensions % num_q_heads == 0
         ), "Embedding dimensions must be divisible by the number of query heads."
 
-        is_gqa: bool = num_q_heads != num_kv_heads
-
         head_dimensions: int = embedding_dimensions // num_q_heads
 
         kv_dimensions: int = num_kv_heads * head_dimensions
@@ -419,12 +423,13 @@ class SelfAttention(Module):
 
         scale: float = 1.0 / sqrt(head_dimensions)
 
-        self.embedding_dimensions: int = embedding_dimensions
+        is_gqa: bool = num_q_heads != num_kv_heads
+
         self.num_q_heads: int = num_q_heads
         self.num_kv_heads: int = num_kv_heads
         self.head_dimensions: int = head_dimensions
-        self.is_gqa: bool = is_gqa
         self.scale: float = scale
+        self.is_gqa: bool = is_gqa
         self.dropout: float = dropout
 
     def add_lora_adapters(self, rank: int, alpha: float) -> None:

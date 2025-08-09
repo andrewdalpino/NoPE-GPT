@@ -6,6 +6,7 @@ from argparse import ArgumentParser
 import torch
 
 from torch.utils.data import ConcatDataset, DataLoader
+from torch.nn import CrossEntropyLoss
 from torch.optim import Adafactor
 from torch.amp import autocast
 from torch.cuda import is_available as cuda_is_available, is_bf16_supported
@@ -15,7 +16,7 @@ from torch.utils.tensorboard import SummaryWriter
 
 from torchmetrics.text import Perplexity
 
-from model import NoPEGPT
+from src.nope_gpt.model import NoPEGPT
 from data import ChatMLTokenizer, SmolTalk, UltraFeedbackSFT, pad_collate, IGNORE_INDEX
 
 from tiktoken import Encoding
@@ -26,7 +27,9 @@ DATASET_SUBSETS = SmolTalk.SUBSETS | {"ultra-feedback"}
 
 
 def main():
-    parser = ArgumentParser(description="Instruction fine-tune the GPT.")
+    parser = ArgumentParser(
+        description="Instruction fine-tune and align the GPT using SFT."
+    )
 
     csv_list = partial(str.split, sep=",")
 
@@ -37,17 +40,15 @@ def main():
         "--dataset_subsets", default=["all", "ultra-feedback"], type=csv_list
     )
     parser.add_argument("--num_dataset_processes", default=1, type=int)
-    parser.add_argument("--max_tokens_per_sample", default=1048, type=int)
+    parser.add_argument("--max_tokens_per_sample", default=2048, type=int)
     parser.add_argument("--batch_size", default=2, type=int)
-    parser.add_argument("--gradient_accumulation_steps", default=64, type=int)
+    parser.add_argument("--gradient_accumulation_steps", default=128, type=int)
     parser.add_argument("--learning_rate", default=1e-2, type=float)
-    parser.add_argument("--rms_decay", default=-0.8, type=float)
     parser.add_argument("--low_memory_optimizer", action="store_true")
-    parser.add_argument("--max_gradient_norm", default=10.0, type=float)
+    parser.add_argument("--max_gradient_norm", default=1.0, type=float)
     parser.add_argument("--num_epochs", default=3, type=int)
     parser.add_argument("--rank", default=8, type=int)
     parser.add_argument("--alpha", default=1.0, type=float)
-    parser.add_argument("--dropout", default=0.05, type=float)
     parser.add_argument("--activation_checkpointing", action="store_true")
     parser.add_argument("--eval_interval", default=1, type=int)
     parser.add_argument("--eval_ratio", default=0.1, type=float)
@@ -187,13 +188,12 @@ def main():
     print("Base checkpoint loaded")
 
     model.freeze_model_parameters()
-    model.resize_token_embeddings(tokenizer.n_vocab)
     model.unfreeze_token_embeddings()
+    model.add_token_embeddings(2)
 
     lora_args = {
         "rank": args.rank,
         "alpha": args.alpha,
-        "dropout": args.dropout,
     }
 
     model.add_lora_parameters(**lora_args)
@@ -206,7 +206,6 @@ def main():
     optimizer = Adafactor(
         model.parameters(),
         lr=args.learning_rate,
-        beta2_decay=args.rms_decay,
         foreach=not args.low_memory_optimizer,
     )
 
@@ -217,8 +216,7 @@ def main():
             args.checkpoint_path, map_location=args.device, weights_only=False
         )
 
-        model.token_embeddings.load_state_dict(checkpoint["token_embeddings"])
-        model.load_state_dict(checkpoint["lora"], strict=False)
+        model.load_state_dict(checkpoint["model"])
         optimizer.load_state_dict(checkpoint["optimizer"])
 
         starting_epoch += checkpoint["epoch"]
@@ -228,6 +226,8 @@ def main():
     model.train()
 
     print(f"Model has {model.num_trainable_params:,} trainable parameters")
+
+    loss_function = CrossEntropyLoss(ignore_index=IGNORE_INDEX)
 
     perplexity_metric = Perplexity(ignore_index=IGNORE_INDEX).to(args.device)
 
@@ -244,7 +244,12 @@ def main():
             y = y.to(args.device, non_blocking=True)
 
             with amp_context:
-                y_pred, loss = model.forward(x, y)
+                y_pred = model.forward(x)
+
+                y_pred = y_pred.view(-1, y_pred.size(-1))
+                y = y.view(-1)  # Flatten the batch dimension.
+
+                loss = loss_function(y_pred, y)
 
                 scaled_loss = loss / args.gradient_accumulation_steps
 
@@ -283,7 +288,7 @@ def main():
                 y = y.to(args.device, non_blocking=True)
 
                 with torch.no_grad():
-                    y_pred, _ = model.forward(x, None)
+                    y_pred = model.forward(x)
 
                 perplexity_metric.update(y_pred, y)
 
@@ -301,9 +306,9 @@ def main():
             checkpoint = {
                 "epoch": epoch,
                 "tokenizer": tokenizer,
-                "token_embeddings": model.token_embeddings.state_dict(),
+                "model_args": model_args,
                 "lora_args": lora_args,
-                "lora": model.lora_state_dict(),
+                "model": model.state_dict(),
                 "optimizer": optimizer.state_dict(),
             }
 

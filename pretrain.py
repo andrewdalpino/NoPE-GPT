@@ -29,7 +29,7 @@ from torchmetrics.text import Perplexity
 import tiktoken
 
 from data import Fineweb, IGNORE_INDEX
-from model import NoPEGPT
+from src.nope_gpt.model import NoPEGPT
 
 from tqdm import tqdm
 
@@ -278,9 +278,9 @@ def main():
             y_pred = model.forward(x)
 
             y_pred = y_pred.view(-1, y_pred.size(-1))
-            labels = y.view(-1)  # Flatten the batch dimension.
+            y = y.view(-1)  # Flatten the batch dimension.
 
-            loss = loss_function(y_pred, labels)
+            loss = loss_function(y_pred, y)
 
             scaled_loss = loss / args.gradient_accumulation_steps
 
@@ -310,6 +310,7 @@ def main():
                 average_cross_entropy = (
                     total_cross_entropy / args.gradient_accumulation_steps
                 )
+
                 gradient_norm = norm.item()
 
                 logger.add_scalar("Cross Entropy", average_cross_entropy, step)

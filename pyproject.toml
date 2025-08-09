@@ -1,0 +1,27 @@
+[build-system]
+requires = ["setuptools >= 61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "nope-gpt"
+description = "A GPT-style large language model (LLM) with no positional embeddings (NoPE)."
+version = "0.0.1"
+requires-python = ">= 3.10"
+dependencies = [
+  "torch==2.7.1",
+  "transformers==4.49.0"
+]
+authors = [
+  {name = "Andrew DalPino"},
+]
+readme = "README.md"
+license = {text = "MIT"}
+
+[project.optional-dependencies]
+dev = ["mypy", "black", "build", "twine"]
+test = ["mypy", "black"]
+
+[project.urls]
+Homepage = "https://github.com/andrewdalpino/NoPE-GPT"
+Documentation = "https://github.com/andrewdalpino/NoPE-GPT/README.md"
+Source = "https://github.com/andrewdalpino/NoPE-GPT"

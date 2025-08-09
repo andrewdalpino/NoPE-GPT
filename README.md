@@ -76,7 +76,7 @@ torchrun --standalone --nnodes=1 --nproc-per-node=8 pretrain.py --batch_size=16 
 | --dataset_path | "./datasets" | str | The path to the preprocessed dataset files on disk. |
 | --batch_size | 2 | int | The number of samples of size `tokens_per_sample` to pass through the network at a time. |
 | --gradient_accumulation_steps | 128 | int | The number of batches to pass through the network before updating the model weights. |
-| --tokens_per_sample | 1024 | int | The number of tokens to pack into a single training sequence. This is sometimes called the block size or context length. |
+| --tokens_per_sample | 2048 | int | The number of tokens to pack into a single training sequence. This is sometimes called the block size or context length. |
 | --learning_rate | 1e-2 | float | The learning rate of the Adafactor optimizer. |
 | --low_memory_optimizer | False | bool | Should the optimizer reduce its memory consumption in exchange for a slightly slower runtime? |
 | --max_gradient_norm | 1.0 | float | Clip gradients above this threshold norm before stepping. |
@@ -130,24 +130,22 @@ python instruction-tune.py --rank=4 --alpha=0.8 --dropout=0.1
 |---|---|---|---|
 | --base_model_path | "./checkpoints/checkpoint.pt" | string | The path to the base checkpoint on disk. |
 | --dataset_subset | "all,ultra-feedback" | str | A comma-separated list of subsets of the dataset to train on. Options are `all`, `apigen-80k`, `everyday-conversations`, `explore-instruct-rewriting`, `longalign`, `metamathqa-50k`, `numina-cot-100k`, `openhermes-100k`, `self-oss-instruct`, `smol-constraints`, `smol-magpie-ultra`, `smol-rewrite`, `smol-summarize`, `systemchats-30k`, and `ultra-feedback`. |
-| --max_tokens_per_sample | 1024 | int | The maximum number of tokens to pack into a single training sequence. |
+| --max_tokens_per_sample | 2048 | int | The maximum number of tokens to pack into a single training sequence. |
 | --batch_size | 2 | int | The number of samples to pass through the network at a time. |
 | --gradient_accumulation_steps | 64 | int | The number of batches to pass through the network before updating the weights. |
-| --learning_rate | 5e-4 | float | The learning rate of the Adafactor optimizer. |
-| --rms_decay | -0.8 | float | The decay rate of the RMS coefficient of the Adafactor optimizer. |
+| --learning_rate | 1e-2 | float | The learning rate of the Adafactor optimizer. |
 | --low_memory_optimizer | False | bool | Should the optimizer reduce its memory consumption in exchange for a slightly slower runtime? |
 | --max_gradient_norm | 1.0 | float | Clip gradients above this threshold norm before stepping. |
 | --rank | 8 | int | The rank of the LoRA decomposition matrices. |
 | --alpha | 1.0 | float | The strength of the LoRA signal. |
-| --dropout | 0.05 | float | The proportion of signals to send to zero during training as regularization. |
 | --num_epochs | 3 | int | The number of epochs to train for. |
 | --activation_checkpointing | False | bool | Should we use activation checkpointing? This will reduce drastically memory utilization during training at the cost of needing to recompute the forward pass. |
 | --eval_interval | 1 | int | Evaluate the model after this many epochs on the testing set. |
 | --eval_ratio | 0.1 | float | The proportion of testing samples to validate the model on. |
 | --checkpoint_interval | 1 | int | Save the model parameters to disk every this many epochs. |
-| --checkpoint_path | "./checkpoints/instruct.pt" | string | The path to the LoRA checkpoint. |
+| --checkpoint_path | "./checkpoints/checkpoint.pt" | str | The path to the model checkpoint. |
 | --resume | False | bool | Should we resume training from the last checkpoint? |
-| --run_dir_path | "./runs/instruction-tune" | str | The path to the TensorBoard run directory for this training session. |
+| --run_dir_path | "./runs" | str | The path to the TensorBoard run directory for this training session. |
 | --device | "cuda" | string | The device to run the computation on. |
 | --seed | None | int | The seed for the random number generator. |
 
@@ -176,7 +174,7 @@ python generate.py --temperature=0.4 --top_k=500 --top_p=0.9
 | --checkpoint_path | "./checkpoints/checkpoint.pt" | string | The path to the base checkpoint file on disk. |
 | --max_tokens | 2000 | int | The maximum number of tokens that the model should generate per sample. |
 | --colorize_tokens | False | bool | Should we colorize the generated tokens based on the certainty of the model? |
-| --context_length | 1024 | int | The number of tokens to keep within the context window of the current prediction. |
+| --context_length | 2048 | int | The number of tokens to keep within the context window of the current prediction. |
 | --temperature | 1.0 | float | The amount of regularization applied to the candidate token probabilities. |
 | --top_k | 500 | int | Only sample from this many candidate tokens with the highest probabilities. |
 | --top_p | 0.9 | float | Of the `top_k` tokens, drop all but the `top_p` portion of the cumulative probability distribution. |
@@ -196,7 +194,7 @@ python chat.py
 Since the chat script uses the same sampling technique as the `generate.py` script, you can use the same arguments to control the generation process such as `--temperature` and `top_k`.
 
 ```
-python chat.py --temperature=0.8 --top_k=300
+python chat.py --temperature=0.9 --top_k=200
 ```
 
 ### Chat Arguments
@@ -207,7 +205,7 @@ python chat.py --temperature=0.8 --top_k=300
 | --lora_path | None | string | The path to the LoRA checkpoint. |
 | --max_tokens | 2000 | int | The maximum number of tokens that the model should generate per sample. |
 | --colorize_tokens | False | bool | Should we colorize the generated tokens based on the certainty of the model? |
-| --context_length | 1024 | int | The number of tokens to keep within the context window of the current prediction. |
+| --context_length | 2048 | int | The number of tokens to keep within the context window of the current prediction. |
 | --temperature | 0.7 | float | The amount of regularization applied to the candidate token probabilities. |
 | --top_k | 500 | int | Only sample from this many candidate tokens with the highest probabilities. |
 | --top_p | 0.9 | float | Of the `top_k` tokens, drop all but the `top_p` portion of the cumulative probability distribution. |
