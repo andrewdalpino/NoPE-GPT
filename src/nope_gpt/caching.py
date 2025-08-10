@@ -64,9 +64,11 @@ class DynamicKVBlock(Module):
     @torch.no_grad()
     def update(self, k: Tensor, v: Tensor) -> tuple[Tensor, Tensor]:
         """Update the cache with a new key-value pairs.
+
         Args:
-            k (Tensor): Key tensor of shape (batch_size, num_heads, seq_len, head_dimensions).
-            v (Tensor): Value tensor of shape (batch_size, num_heads, seq_len, head_dimensions).
+            k (Tensor): Key tensor of shape (batch_size, num_kv_heads, seq_len, head_dimensions).
+            v (Tensor): Value tensor of shape (batch_size, num_kv_heads, seq_len, head_dimensions).
+
         Returns:
             tuple[Tensor, Tensor]: Updated key and value caches.
         """
