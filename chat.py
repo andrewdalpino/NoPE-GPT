@@ -13,12 +13,10 @@ from src.nope_gpt.model import NoPEGPT
 from memory import BufferWindowMemory
 
 DEFAULT_SYSTEM_MESSAGE = (
-    "You're a helpful AI assistant named NoPEGPT. "
-    "Your job is to chat and answer questions as accurately as possible. "
-    "If you don't know the answer, say 'I don't know'. "
+    "You're a helpful AI assistant named NoPE GPT. "
+    "Your job is to chat and answer questions. "
+    "If you don't know the answer to a question, say 'I don't know'. "
 )
-
-RESPONSE_HEADER = "<|im_start|>assistant\n"
 
 WHITE = (255, 255, 255)
 
@@ -27,10 +25,7 @@ def main():
     parser = ArgumentParser(description="Chat with the instruction-tuned model.")
 
     parser.add_argument(
-        "--base_checkpoint_path", default="./checkpoints/checkpoint.pt", type=str
-    )
-    parser.add_argument(
-        "--lora_checkpoint_path", default="./checkpoints/instruct.pt", type=str
+        "--checkpoint_path", default="./checkpoints/checkpoint.pt", type=str
     )
     parser.add_argument("--max_tokens", default=2000, type=int)
     parser.add_argument("--colorize_tokens", action="store_true")
@@ -101,16 +96,22 @@ def main():
     )
 
     while True:
-        instruction = input("Enter a prompt: ")
+        instruction_message = input("Enter a prompt: ")
 
         instruction_message = {
             "role": "user",
-            "content": instruction,
+            "content": instruction_message,
         }
 
-        messages = [system_message] + memory.get_history() + [instruction_message]
+        memory.add_message(instruction_message)
 
-        prompt = torch.tensor(list(prompt), dtype=torch.int64, device=args.device)
+        messages = [system_message] + memory.get_history()
+
+        tokens = tokenizer.tokenize_prompt(messages)
+
+        prompt = torch.tensor(tokens, dtype=torch.int64, device=args.device)
+
+        response = ""
 
         for token, probability in generate(prompt):
             token, probability = token.item(), probability.item()
@@ -133,10 +134,17 @@ def main():
 
             print(f"{color}{out}{style("reset")}", end="", flush=True)
 
+            response += out
+
         print("\n")
 
         if "y" not in input("Go again? (yes|no): ").lower():
             break
+
+        response_message = {
+            "role": "assistant",
+            "content": response,
+        }
 
         memory.add_message(response_message)
 

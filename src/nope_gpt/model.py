@@ -44,64 +44,39 @@ class NoPEGPT(Module, PyTorchModelHubMixin):
 
         assert vocabulary_size > 0, "Vocabulary size must be greater than 0."
         assert embedding_dimensions > 0, "Embedding dimensions must be greater than 0."
+
         assert (
             num_decoder_layers > 0
         ), "Number of decoder layers must be greater than 0."
 
         token_embeddings = Embedding(vocabulary_size, embedding_dimensions)
 
-        output_layer = Linear(embedding_dimensions, vocabulary_size, bias=False)
-
-        output_layer.weight = token_embeddings.weight  # Tie weights
-
-        self.token_embeddings = token_embeddings
-
-        self.decoder = ModuleList(
-            [
-                DecoderBlock(
-                    embedding_dimensions,
-                    num_q_heads,
-                    num_kv_heads,
-                    hidden_ratio,
-                    dropout,
-                )
-                for _ in range(num_decoder_layers)
-            ]
+        decoder = Decoder(
+            embedding_dimensions,
+            num_q_heads,
+            num_kv_heads,
+            num_decoder_layers,
+            hidden_ratio,
+            dropout,
         )
 
-        self.checkpoint = lambda layer, x: layer.forward(x)
+        token_classifier = TokenClassifier(embedding_dimensions, vocabulary_size)
 
-        self.output_norm = RMSNorm(embedding_dimensions)
-        self.output_layer = output_layer
+        token_classifier.linear.weight = token_embeddings.weight  # Tie weights
 
-        self.vocabulary_size: int = vocabulary_size
-        self.embedding_dimensions: int = embedding_dimensions
-        self.num_q_heads: int = num_q_heads
+        self.token_embeddings = token_embeddings
+        self.decoder = decoder
+        self.token_classifier = token_classifier
 
     @property
     def num_trainable_params(self) -> int:
         return sum(param.numel() for param in self.parameters() if param.requires_grad)
-
-    def enable_activation_checkpointing(self) -> None:
-        """Instead of memorizing the activations of the forward pass, recompute them at various checkpoints."""
-
-        self.checkpoint = partial(torch_checkpoint, use_reentrant=False)
 
     def freeze_model_parameters(self) -> None:
         """Freeze all model parameters to prevent them from being updated during training."""
 
         for param in self.parameters():
             param.requires_grad = False
-
-    def unfreeze_last_k_decoder_layers(self, k: int) -> None:
-        """Unfreeze the last k decoder layers to allow for fine-tuning."""
-
-        if k <= 0:
-            return
-
-        for layer in self.decoder[-k:]:
-            for param in layer.parameters():
-                param.requires_grad = True
 
     def unfreeze_token_embeddings(self) -> None:
         """Unfreeze the token embeddings to allow for fine-tuning."""
@@ -112,10 +87,13 @@ class NoPEGPT(Module, PyTorchModelHubMixin):
     def resize_token_embeddings(self, new_vocabulary_size: int) -> None:
         """Resize the token embeddings to a new vocabulary size."""
 
-        new_embeddings = Embedding(new_vocabulary_size, self.embedding_dimensions)
-        new_embeddings = new_embeddings.to(self.token_embeddings.weight.device)
+        vocabulary_size = self.token_embeddings.num_embeddings
+        embedding_dimensions = self.token_embeddings.embedding_dim
+        device = self.token_embeddings.weight.device
 
-        num_tokens_to_copy = min(new_vocabulary_size, self.vocabulary_size)
+        new_embeddings = Embedding(new_vocabulary_size, embedding_dimensions).to(device)
+
+        num_tokens_to_copy = min(new_vocabulary_size, vocabulary_size)
 
         new_embeddings.weight[:num_tokens_to_copy, :] = self.token_embeddings.weight[
             :num_tokens_to_copy, :
@@ -123,16 +101,16 @@ class NoPEGPT(Module, PyTorchModelHubMixin):
 
         # Initialize new embeddings with kaiming normal distribution.
         for i in range(num_tokens_to_copy, new_vocabulary_size):
-            new_embeddings.weight[i] = torch.randn(self.embedding_dimensions) / sqrt(
-                self.embedding_dimensions
-            )
+            tensor = torch.randn(embedding_dimensions)
+            tensor /= sqrt(embedding_dimensions)
+
+            new_embeddings.weight[i] = tensor
 
         self.token_embeddings.weight = new_embeddings.weight
         self.token_embeddings.num_embeddings = new_embeddings.num_embeddings
 
-        self.output_layer.weight = self.token_embeddings.weight  # Retie weights
-
-        self.vocabulary_size = new_vocabulary_size
+        # Retie weights
+        self.token_classifier.linear.weight = self.token_embeddings.weight
 
     def add_lora_parameters(self, rank: int, alpha: float) -> None:
         """Reparameterize the weights of the model using LoRA adapters."""
@@ -154,12 +132,8 @@ class NoPEGPT(Module, PyTorchModelHubMixin):
         """A forward pass optimized for batch training."""
 
         z = self.token_embeddings.forward(x)
-
-        for layer in self.decoder:
-            z = self.checkpoint(layer, z)
-
-        z = self.output_norm.forward(z)
-        z = self.output_layer.forward(z)
+        z = self.decoder.forward(z)
+        z = self.token_classifier.forward(z)
 
         return z
 
@@ -168,15 +142,12 @@ class NoPEGPT(Module, PyTorchModelHubMixin):
         """A forward pass optimized for next-token prediction."""
 
         z = self.token_embeddings.forward(x)
-
-        for layer, kv_block in zip(self.decoder, kv_cache):
-            z = layer.predict(z, kv_block)
+        z = self.decoder.predict(z, kv_cache)
 
         # Pluck only the last token embedding from each batch.
         z = z[:, -1, :]
 
-        z = self.output_norm.forward(z)
-        z = self.output_layer.forward(z)
+        z = self.token_classifier.forward(z)
 
         return z
 
@@ -184,8 +155,8 @@ class NoPEGPT(Module, PyTorchModelHubMixin):
     def generate(
         self,
         prompt: Tensor,
-        max_tokens: int = 1000,
-        context_length: int = 1024,
+        max_tokens: int = 2000,
+        context_length: int = 2048,
         temperature: float = 1.0,
         top_k: int = 500,
         top_p: float = 0.9,
@@ -200,11 +171,6 @@ class NoPEGPT(Module, PyTorchModelHubMixin):
         assert max_tokens > 0, "Max tokens must be greater than 0."
         assert context_length > 0, "Context length must be greater than 0."
         assert temperature > 0, "Temperature must be greater than 0."
-
-        assert (
-            0 < top_k <= self.vocabulary_size
-        ), "Top k must be between 1 and vocabulary size."
-
         assert 0.0 < top_p <= 1.0, "Top p must be between 0 and 1."
         assert 0.0 <= repeat_penalty <= 1.0, "Repeat penalty must be between 0 and 1."
         assert repeat_window > 0, "Repeat window must be greater than 0."
@@ -259,6 +225,66 @@ class NoPEGPT(Module, PyTorchModelHubMixin):
         return num_tokens
 
 
+class Decoder(Module):
+    """A stack of decoder blocks."""
+
+    def __init__(
+        self,
+        embedding_dimensions: int,
+        num_q_heads: int,
+        num_kv_heads: int,
+        num_layers: int,
+        hidden_ratio: int,
+        dropout: float,
+    ):
+        super().__init__()
+
+        assert num_layers > 0, "Number of layers must be greater than 0."
+
+        self.layers = ModuleList(
+            [
+                DecoderBlock(
+                    embedding_dimensions,
+                    num_q_heads,
+                    num_kv_heads,
+                    hidden_ratio,
+                    dropout,
+                )
+                for _ in range(num_layers)
+            ]
+        )
+
+        self.checkpoint = lambda layer, x: layer.forward(x)
+
+    def enable_activation_checkpointing(self) -> None:
+        """Instead of memorizing the activations of the forward pass, recompute them at various checkpoints."""
+
+        self.checkpoint = partial(torch_checkpoint, use_reentrant=False)
+
+    def add_lora_adapters(self, rank: int, alpha: float) -> None:
+        """Reparameterize the weights of the decoder using LoRA adapters."""
+
+        for layer in self.layers:
+            layer.add_lora_adapters(rank, alpha)
+
+    def forward(self, x: Tensor) -> Tensor:
+        """A forward pass optimized for batch training."""
+
+        for layer in self.layers:
+            x = self.checkpoint(layer, x)
+
+        return x
+
+    @torch.no_grad()
+    def predict(self, x: Tensor, kv_cache: KVCache) -> Tensor:
+        """A forward pass optimized for next-token prediction."""
+
+        for layer, kv_block in zip(self.layers, kv_cache):
+            x = layer.predict(x, kv_block)
+
+        return x
+
+
 class DecoderBlock(Module):
     """Decoder block with multi-head attention, multilayer perceptron, and residual connections."""
 
@@ -272,21 +298,19 @@ class DecoderBlock(Module):
     ):
         super().__init__()
 
-        self.norm1 = RMSNorm(embedding_dimensions)
         self.attention = SelfAttention(
             embedding_dimensions, num_q_heads, num_kv_heads, dropout
         )
 
-        self.norm2 = RMSNorm(embedding_dimensions)
         self.feedforward = InvertedBottleneck(
             embedding_dimensions, hidden_ratio, dropout
         )
 
+        self.norm1 = RMSNorm(embedding_dimensions)
+        self.norm2 = RMSNorm(embedding_dimensions)
+
     def add_lora_adapters(self, rank: int, alpha: float) -> None:
         """Reparameterize the weights of the decoder using LoRA adapters."""
-
-        assert rank > 0, "Rank must be greater than 0."
-        assert alpha > 0.0, "Alpha must be greater than 0."
 
         self.attention.add_lora_adapters(rank, alpha)
         self.feedforward.add_lora_adapters(rank, alpha)
@@ -368,9 +392,6 @@ class SelfAttention(Module):
 
     def add_lora_adapters(self, rank: int, alpha: float) -> None:
         """Reparameterize the weights of the attention module using LoRA adapters."""
-
-        assert rank > 0, "Rank must be greater than 0."
-        assert alpha > 0.0, "Alpha must be greater than 0."
 
         register_parametrization(
             self.q_proj, "weight", LoRA.from_linear(self.q_proj, rank, alpha)
@@ -469,9 +490,6 @@ class InvertedBottleneck(Module):
     def add_lora_adapters(self, rank: int, alpha: float) -> None:
         """Reparameterize the weights of the feedforward module using LoRA adapters."""
 
-        assert rank > 0, "Rank must be greater than 0."
-        assert alpha > 0.0, "Alpha must be greater than 0."
-
         register_parametrization(
             self.linear1, "weight", LoRA.from_linear(self.linear1, rank, alpha)
         )
@@ -492,6 +510,23 @@ class InvertedBottleneck(Module):
         z = self.linear1.forward(x)
         z = self.silu.forward(z)
         z = self.linear2.forward(z)
+
+        return z
+
+
+class TokenClassifier(Module):
+    """A token classification head for the vocabulary."""
+
+    def __init__(self, embedding_dimensions: int, vocabulary_size: int):
+        super().__init__()
+
+        self.norm = RMSNorm(embedding_dimensions)
+
+        self.linear = Linear(embedding_dimensions, vocabulary_size, bias=False)
+
+    def forward(self, x: Tensor) -> Tensor:
+        z = self.norm.forward(x)
+        z = self.linear.forward(z)
 
         return z
 

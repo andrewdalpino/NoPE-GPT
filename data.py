@@ -123,7 +123,7 @@ class Fineweb(Dataset):
         }
 
     def __getitem__(self, index: int):
-        assert index < self.max_offset, "Offset out of bounds"
+        assert index < self.max_offset, "Offset out of bounds."
 
         start: int = index * self.tokens_per_sample
         end: int = start + self.tokens_per_sample
@@ -134,7 +134,7 @@ class Fineweb(Dataset):
         x = x.astype(np.int64)
         y = y.astype(np.int64)
 
-        assert x.shape == y.shape, "Sample / label shape mismatch"
+        assert x.shape == y.shape, "Sample / label shape mismatch."
 
         return x, y
 
@@ -142,7 +142,55 @@ class Fineweb(Dataset):
         return self.max_offset
 
 
-class SmolTalk("ChatMLDataset"):
+class ChatMLDataset(Dataset):
+    """Base class for datasets with samples formatted as ChatML messages."""
+
+    IGNORE_INDEX = -100
+
+    def __init__(self, tokenizer: ChatMLTokenizer, max_tokens_per_sample: int):
+        assert max_tokens_per_sample > 0, "max_tokens_per_sample must be positive"
+
+        self.tokenizer = tokenizer
+        self.max_tokens_per_sample = max_tokens_per_sample
+
+    def tokenize_messages(self, messages: list[dict]) -> tuple[list, list]:
+        sample, labels = [], []
+
+        total_tokens = 0
+        has_completion = False
+
+        for message in messages:
+            tokens = self.tokenizer.tokenize_message(message)
+
+            total_tokens += len(tokens)
+
+            if total_tokens > 1 + self.max_tokens_per_sample:
+                break
+
+            sample.extend(tokens)
+
+            is_completion = message["role"] == "assistant"
+
+            if is_completion:
+                labels.extend(tokens)
+
+                has_completion = True
+            else:
+                labels.extend([self.IGNORE_INDEX] * len(tokens))
+
+        if not has_completion:
+            warnings.warn(
+                "No completion found in sample, training may be unstable. "
+                "Filter or increase max_tokens_per_sample to avoid this warning."
+            )
+
+        sample = sample[:-1]
+        labels = labels[1:]
+
+        return sample, labels
+
+
+class SmolTalk(ChatMLDataset):
     """
     The SmolTalk dataset by HuggingFace formatted as ChatML messages for supervised instruction tuning.
     """
@@ -173,14 +221,33 @@ class SmolTalk("ChatMLDataset"):
         tokenizer: ChatMLTokenizer,
         subset: str,
         max_tokens_per_sample: int,
+        filter_long_samples: bool,
     ):
         super().__init__(tokenizer, max_tokens_per_sample)
 
-        assert subset in self.SUBSETS, (
-            f"Invalid subset, {subset} given. " f"Valid subsets are: {self.SUBSETS}"
-        )
+        assert (
+            subset in self.SUBSETS
+        ), f"Invalid subset, {subset} given, valid subsets are: {self.SUBSETS}"
 
-        self.dataset = load_dataset(self.DATASET_NAME, subset, split="train")
+        dataset = load_dataset(self.DATASET_NAME, subset, split="train")
+
+        def filter_by_max_tokens(sample: dict) -> bool:
+            tokens = []
+
+            for message in sample["messages"]:
+                tokens.extend(tokenizer.tokenize_message(message))
+
+            keep = len(tokens) < max_tokens_per_sample
+
+            return keep
+
+        if filter_long_samples:
+            dataset = dataset.filter(
+                filter_by_max_tokens,
+                desc=f"Filtering samples longer than {max_tokens_per_sample} tokens",
+            )
+
+        self.dataset = dataset
 
     def __getitem__(self, index: int):
         messages = self.dataset[index]["messages"]
@@ -190,7 +257,7 @@ class SmolTalk("ChatMLDataset"):
         x = torch.tensor(sample, dtype=torch.int64)
         y = torch.tensor(labels, dtype=torch.int64)
 
-        assert x.shape == y.shape, "Sample / label shape mismatch"
+        assert x.shape == y.shape, "Sample / label shape mismatch."
 
         return x, y
 
@@ -198,7 +265,7 @@ class SmolTalk("ChatMLDataset"):
         return len(self.dataset)
 
 
-class UltraFeedbackSFT("ChatMLDataset"):
+class UltraFeedbackSFT(ChatMLDataset):
     """
     The binarized version of the UltraFeedback dataset for human preference alignment via SFT.
     """
@@ -210,6 +277,7 @@ class UltraFeedbackSFT("ChatMLDataset"):
         tokenizer: ChatMLTokenizer,
         split: str,
         max_tokens_per_sample: int,
+        filter_long_samples: bool,
     ):
         super().__init__(tokenizer, max_tokens_per_sample)
 
@@ -220,9 +288,27 @@ class UltraFeedbackSFT("ChatMLDataset"):
         new_dataset = partial(load_dataset, name=self.DATASET_NAME)
 
         if split == "train":
-            self.dataset = new_dataset(split="train_sft")
+            dataset = new_dataset(split="train_sft")
         else:
-            self.dataset = new_dataset(split="test_sft")
+            dataset = new_dataset(split="test_sft")
+
+        def filter_by_max_tokens(sample: dict) -> bool:
+            tokens = []
+
+            for message in sample["messages"]:
+                tokens.extend(tokenizer.tokenize_message(message))
+
+            keep = len(tokens) < max_tokens_per_sample
+
+            return keep
+
+        if filter_long_samples:
+            dataset = dataset.filter(
+                filter_by_max_tokens,
+                desc=f"Filtering samples longer than {max_tokens_per_sample} tokens",
+            )
+
+        self.dataset = dataset
 
     def __getitem__(self, index: int):
         messages = self.dataset[index]["messages"]
@@ -232,69 +318,12 @@ class UltraFeedbackSFT("ChatMLDataset"):
         x = torch.tensor(sample, dtype=torch.int64)
         y = torch.tensor(labels, dtype=torch.int64)
 
-        assert x.shape == y.shape, "Sample / label shape mismatch"
+        assert x.shape == y.shape, "Sample / label shape mismatch."
 
         return x, y
 
     def __len__(self):
         return len(self.dataset)
-
-
-class ChatMLDataset(Dataset):
-    """Base class for datasets with samples formatted as ChatML messages."""
-
-    IGNORE_INDEX = -100
-
-    def __init__(self, tokenizer: ChatMLTokenizer, max_tokens_per_sample: int):
-        assert max_tokens_per_sample > 0, "max_tokens_per_sample must be positive"
-
-        response_header_tokens = tokenizer.encode(
-            self.RESPONSE_HEADER, allowed_special="all"
-        )
-
-        response_header_length = len(response_header_tokens)
-
-        self.tokenizer = tokenizer
-        self.max_tokens_per_sample = max_tokens_per_sample
-        self.response_header_length = response_header_length
-
-    def tokenize_messages(self, messages: list[dict]) -> tuple[list, list]:
-        sample, labels = [], []
-
-        total_tokens = 0
-        has_completion = False
-
-        for message in messages:
-            tokens = self.tokenizer.tokenize_message(message)
-
-            total_tokens += len(tokens)
-
-            if total_tokens > 1 + self.max_tokens_per_sample:
-                break
-
-            sample.extend(tokens)
-
-            is_completion = message["role"] == "assistant"
-
-            if is_completion:
-                labels.extend([self.IGNORE_INDEX] * self.response_header_length)
-
-                labels.extend(tokens[self.response_header_length :])
-
-                has_completion = True
-            else:
-                labels.extend([self.IGNORE_INDEX] * len(tokens))
-
-        if not has_completion:
-            warnings.warn(
-                "No completion found in sample, training may be unstable. "
-                "Filter or increase max_tokens_per_sample to avoid this warning."
-            )
-
-        sample = sample[:-1]
-        labels = labels[1:]
-
-        return sample, labels
 
 
 def pad_collate(

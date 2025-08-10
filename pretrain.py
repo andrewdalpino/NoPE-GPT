@@ -199,7 +199,7 @@ def main():
     model = NoPEGPT(**model_args)
 
     if args.activation_checkpointing:
-        model.enable_activation_checkpointing()
+        model.decoder.enable_activation_checkpointing()
 
     print("Compiling model")
     model = torch.compile(model)
@@ -233,7 +233,7 @@ def main():
     if args.resume:
         checkpoint = torch.load(
             args.checkpoint_path, map_location="cpu", weights_only=False
-        )  # Always load into CPU RAM first to prevent CUDA out-of-memory errors.
+        )
 
         train_loader.load_state_dict(checkpoint["train_loader"])
 

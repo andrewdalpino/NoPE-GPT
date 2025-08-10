@@ -19,8 +19,6 @@ from torchmetrics.text import Perplexity
 from src.nope_gpt.model import NoPEGPT
 from data import ChatMLTokenizer, SmolTalk, UltraFeedbackSFT, pad_collate, IGNORE_INDEX
 
-from tiktoken import Encoding
-
 from tqdm import tqdm
 
 DATASET_SUBSETS = SmolTalk.SUBSETS | {"ultra-feedback"}
@@ -40,6 +38,7 @@ def main():
         "--dataset_subsets", default=["all", "ultra-feedback"], type=csv_list
     )
     parser.add_argument("--max_tokens_per_sample", default=2048, type=int)
+    parser.add_argument("--filter_long_samples", action="store_true")
     parser.add_argument("--batch_size", default=2, type=int)
     parser.add_argument("--gradient_accumulation_steps", default=128, type=int)
     parser.add_argument("--learning_rate", default=1e-2, type=float)
@@ -129,17 +128,33 @@ def main():
 
     for subset in frozenset(args.dataset_subsets):
         if subset in SmolTalk.SUBSETS:
-            datasets.append(SmolTalk(tokenizer, subset=subset))
+            dataset = SmolTalk(
+                tokenizer,
+                subset=subset,
+                max_tokens_per_sample=args.max_tokens_per_sample,
+                filter_long_samples=args.filter_long_samples,
+            )
+
+            datasets.append(dataset)
 
         if subset == "ultra-feedback":
-            datasets.append(UltraFeedbackSFT(tokenizer, split="train"))
+            dataset = UltraFeedbackSFT(
+                tokenizer,
+                split="train",
+                max_tokens_per_sample=args.max_tokens_per_sample,
+                filter_long_samples=args.filter_long_samples,
+            )
+
+            datasets.append(dataset)
 
     dataset = ConcatDataset(datasets)
 
-    training, testing = random_split(dataset, (0.9, 0.1))
+    training_ratio = 1.0 - args.eval_ratio
+
+    training, testing = random_split(dataset, (training_ratio, args.eval_ratio))
 
     right_pad_collate = partial(
-        pad_collate, padding_side="right", padding_index=tokenizer.eot_token
+        pad_collate, padding_side="right", padding_index=tokenizer.tokenizer.eot_token
     )
 
     new_dataloader = partial(
@@ -167,7 +182,9 @@ def main():
     print("Base checkpoint loaded")
 
     model.freeze_model_parameters()
+
     model.unfreeze_token_embeddings()
+
     model.resize_token_embeddings(tokenizer.vocabulary_size)
 
     lora_args = {
@@ -177,8 +194,12 @@ def main():
 
     model.add_lora_parameters(**lora_args)
 
+    print("LoRA parameters added")
+
+    print(f"Model has {model.num_trainable_params:,} trainable parameters")
+
     if args.activation_checkpointing:
-        model.enable_activation_checkpointing()
+        model.decoder.enable_activation_checkpointing()
 
     model = model.to(args.device)
 
@@ -203,8 +224,6 @@ def main():
         print("Previous checkpoint resumed successfully")
 
     model.train()
-
-    print(f"Model has {model.num_trainable_params:,} trainable parameters")
 
     loss_function = CrossEntropyLoss(ignore_index=IGNORE_INDEX)
 
