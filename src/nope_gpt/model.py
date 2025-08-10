@@ -1,3 +1,5 @@
+import copy
+
 from math import sqrt
 from functools import partial
 from typing import Self
@@ -99,7 +101,7 @@ class NoPEGPT(Module, PyTorchModelHubMixin):
             :num_tokens_to_copy, :
         ]
 
-        # Initialize new embeddings with kaiming normal distribution.
+        # Initialize new embeddings with a kaiming normal distribution.
         for i in range(num_tokens_to_copy, new_vocabulary_size):
             tensor = torch.randn(embedding_dimensions)
             tensor /= sqrt(embedding_dimensions)
@@ -298,13 +300,11 @@ class DecoderBlock(Module):
     ):
         super().__init__()
 
-        self.attention = SelfAttention(
+        self.stage1 = SelfAttention(
             embedding_dimensions, num_q_heads, num_kv_heads, dropout
         )
 
-        self.feedforward = InvertedBottleneck(
-            embedding_dimensions, hidden_ratio, dropout
-        )
+        self.stage2 = InvertedBottleneck(embedding_dimensions, hidden_ratio, dropout)
 
         self.norm1 = RMSNorm(embedding_dimensions)
         self.norm2 = RMSNorm(embedding_dimensions)
@@ -312,21 +312,21 @@ class DecoderBlock(Module):
     def add_lora_adapters(self, rank: int, alpha: float) -> None:
         """Reparameterize the weights of the decoder using LoRA adapters."""
 
-        self.attention.add_lora_adapters(rank, alpha)
-        self.feedforward.add_lora_adapters(rank, alpha)
+        self.stage1.add_lora_adapters(rank, alpha)
+        self.stage2.add_lora_adapters(rank, alpha)
 
     def forward(self, x: Tensor) -> Tensor:
+        """A forward pass optimized for batch training."""
+
         z = self.norm1.forward(x)
-        z = self.attention.forward(z)
+        z = self.stage1.forward(z)
 
-        z = x + z  # Residual connection
+        x_hat = x + z  # Residual connection
 
-        x = z
+        z = self.norm2.forward(x_hat)
+        z = self.stage2.forward(z)
 
-        z = self.norm2.forward(x)
-        z = self.feedforward.forward(z)
-
-        z = x + z  # Residual connection
+        z = x_hat + z  # Residual connection
 
         return z
 
@@ -335,16 +335,14 @@ class DecoderBlock(Module):
         """A forward pass optimized for next-token prediction."""
 
         z = self.norm1.forward(x)
-        z = self.attention.predict(z, kv_block)
+        z = self.stage1.predict(z, kv_block)
 
-        z = x + z  # Residual connection
+        x_hat = x + z  # Residual connection
 
-        x = z
+        z = self.norm2.forward(x_hat)
+        z = self.stage2.predict(z)
 
-        z = self.norm2.forward(x)
-        z = self.feedforward.predict(z)
-
-        z = x + z  # Residual connection
+        z = x_hat + z  # Residual connection
 
         return z
 
