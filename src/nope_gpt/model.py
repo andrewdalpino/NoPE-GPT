@@ -381,6 +381,7 @@ class SelfAttention(Module):
 
         is_gqa: bool = num_q_heads != num_kv_heads
 
+        self.embedding_dimensions: int = embedding_dimensions
         self.num_q_heads: int = num_q_heads
         self.num_kv_heads: int = num_kv_heads
         self.head_dimensions: int = head_dimensions

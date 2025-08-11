@@ -16,12 +16,12 @@ class KVCache(Module):
             [
                 DynamicKVBlock(
                     batch_size,
-                    layer.attention.embedding_dimensions,
-                    layer.attention.num_q_heads,
-                    layer.attention.num_kv_heads,
+                    layer.stage1.embedding_dimensions,
+                    layer.stage1.num_q_heads,
+                    layer.stage1.num_kv_heads,
                     context_length,
                 )
-                for layer in model.decoder
+                for layer in model.decoder.layers
             ]
         )
 
