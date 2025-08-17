@@ -1,5 +1,3 @@
-import copy
-
 from math import sqrt
 from functools import partial
 from typing import Self

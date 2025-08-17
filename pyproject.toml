@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "nope-gpt"
 description = "A GPT-style large language model (LLM) with no positional embeddings (NoPE)."
-version = "0.0.1"
+version = "0.1.0"
 requires-python = ">= 3.10"
 dependencies = [
   "tiktoken==0.9.0",
