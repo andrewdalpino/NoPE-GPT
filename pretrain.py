@@ -232,7 +232,7 @@ def main():
 
     if args.resume:
         checkpoint = torch.load(
-            args.checkpoint_path, map_location="cpu", weights_only=False
+            args.checkpoint_path, map_location=args.device, weights_only=False
         )
 
         train_loader.load_state_dict(checkpoint["train_loader"])
@@ -241,8 +241,6 @@ def main():
         optimizer.load_state_dict(checkpoint["optimizer"])
 
         step += checkpoint["step"]
-
-        model = model.to(args.device)
 
         print("Previous checkpoint resumed successfully")
 

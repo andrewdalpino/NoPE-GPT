@@ -8,7 +8,39 @@ NoPE GPT is a generative pretrained Transformer (GPT) language model with no pos
 
 - **Fully Open-source**: Unlike closed-source LLMs, NoPE GPT provides both the model weights *and* the source code to train, fine-tune, export, and generate text from the model using your own hardware. With the help of the open-source software community, we aim to democratize access to AI and continually improve the models.
 
-## Recommended Pretraining Configurations
+## Pretrained Models
+
+| Name | Vocab. Size | Embedding Dim. | Query Heads | Key/Value Heads | Hidden Ratio | Layers | Parameters |
+|---|---|---|---|---|---|---|
+| [NoPE-GPT-400M-Base](https://huggingface.co/andrewdalpino/NoPE-GPT-400M-Base) | 50,257 | 1280 | 20 | 5 | 4X | 20 | 408M |
+
+## Pretrained Example
+
+```sh
+pip install nope-gpt
+```
+
+```python
+from nope_gpt import NoPEGPT
+
+model_name = "andrewdalpino/NoPE-GPT-400M-Base"
+
+model = NoPEGPT.from_pretrained(model_name)
+```
+
+## Install Project Dependencies
+
+Project dependencies are specified in the `requirements.txt` file. You can install them with [pip](https://pip.pypa.io/en/stable/) using the following command from the project root. We recommend using a virtual environment such as `venv` to keep package dependencies on your system tidy.
+
+```
+python -m venv ./.venv
+
+source ./.venv/bin/activate
+
+pip install -r requirements.txt
+```
+
+## Suggested Configurations
 
 Below is a table of some recommended model pretraining configurations but feel free to experiment with settings on your own. See the `model_sizing.ipynb` notebook to estimate the memory and compute requirements for your model configuration.
 
@@ -24,18 +56,6 @@ Below is a table of some recommended model pretraining configurations but feel f
 We typically recommend a training `block size` (also referred to as context length) of between 1024 to 4096 for standard models and 4096 or higher for long-context applications such as conversational chat bots, retrieval augmented generation (RAG), and chain-of-thought (CoT) prompting a.k.a "reasoning" models.
 
 **Note**: NoPE GPT can be trained using variable block sizes since the architecture does not depend on any discrete positional embeddings. This flexibility allows you to progressively extend the context window during training.
-
-## Install Project Dependencies
-
-Project dependencies are specified in the `requirements.txt` file. You can install them with [pip](https://pip.pypa.io/en/stable/) using the following command from the project root. We recommend using a virtual environment such as `venv` to keep package dependencies on your system tidy.
-
-```
-python -m venv ./.venv
-
-source ./.venv/bin/activate
-
-pip install -r requirements.txt
-```
 
 ## Pretraining
 
