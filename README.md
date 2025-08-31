@@ -16,9 +16,13 @@ NoPE GPT is a generative pretrained Transformer (GPT) language model with no pos
 
 ## Pretrained Example
 
+To load one of the pretrained models from HuggingFace Hub, first install the `nope-gpt` package into your project. 
+
 ```sh
 pip install nope-gpt
 ```
+
+Then, import the NoPEGPT class and call the `from_pretrained()` method with the name of the model you want to load.
 
 ```python
 from nope_gpt import NoPEGPT
@@ -39,23 +43,6 @@ source ./.venv/bin/activate
 
 pip install -r requirements.txt
 ```
-
-## Suggested Configurations
-
-Below is a table of some recommended model pretraining configurations but feel free to experiment with settings on your own. See the `model_sizing.ipynb` notebook to estimate the memory and compute requirements for your model configuration.
-
-| Name | Vocab. Size | Embedding Dim. | Attn. Heads | Layers | Parameters | Min. Training Tokens |
-|---|---|---|---|---|---|---|
-| Small | 50,257 | 1024 | 16 | 24 | 353M | 7B |
-| Medium | 50,257 | 2048 | 32 | 32 | 1.7B | 34B |
-| Large | 100,275 | 4096 | 64 | 32 | 6.8B | 132B |
-| X-large | 100,275 | 4096 | 64 | 64 | 13B | 262B |
-| XX-large | 200,017 | 8192 | 128 | 64 | 53B | 1T |
-| XXX-large | 200,017 | 8192 | 128 | 128 | 105B | 2T |
-
-We typically recommend a training `block size` (also referred to as context length) of between 1024 to 4096 for standard models and 4096 or higher for long-context applications such as conversational chat bots, retrieval augmented generation (RAG), and chain-of-thought (CoT) prompting a.k.a "reasoning" models.
-
-**Note**: NoPE GPT can be trained using variable block sizes since the architecture does not depend on any discrete positional embeddings. This flexibility allows you to progressively extend the context window during training.
 
 ## Pretraining
 
@@ -97,6 +84,7 @@ torchrun --standalone --nnodes=1 --nproc-per-node=8 pretrain.py --batch_size=16 
 | --batch_size | 2 | int | The number of samples of size `tokens_per_sample` to pass through the network at a time. |
 | --gradient_accumulation_steps | 128 | int | The number of batches to pass through the network before updating the model weights. |
 | --tokens_per_sample | 2048 | int | The number of tokens to pack into a single training sequence. This is sometimes called the block size or context length. |
+| --max_steps | 10000 | int | The maximum number of steps to take for pretraining. |
 | --learning_rate | 1e-2 | float | The learning rate of the Adafactor optimizer. |
 | --low_memory_optimizer | False | bool | Should the optimizer reduce its memory consumption in exchange for a slightly slower runtime? |
 | --max_gradient_norm | 1.0 | float | Clip gradients above this threshold norm before stepping. |
