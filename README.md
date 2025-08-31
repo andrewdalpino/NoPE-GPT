@@ -11,7 +11,7 @@ NoPE GPT is a generative pretrained Transformer (GPT) language model with no pos
 ## Pretrained Models
 
 | Name | Vocab. Size | Embedding Dim. | Query Heads | Key/Value Heads | Hidden Ratio | Layers | Parameters |
-|---|---|---|---|---|---|---|
+|---|---|---|---|---|---|---|---|
 | [NoPE-GPT-400M-Base](https://huggingface.co/andrewdalpino/NoPE-GPT-400M-Base) | 50,257 | 1280 | 20 | 5 | 4X | 20 | 408M |
 
 ## Pretrained Example
