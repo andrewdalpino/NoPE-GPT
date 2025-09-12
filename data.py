@@ -222,6 +222,7 @@ class SmolTalk(ChatMLDataset):
         subset: str,
         max_tokens_per_sample: int,
         filter_long_samples: bool,
+        num_processes: int,
     ):
         super().__init__(tokenizer, max_tokens_per_sample)
 
@@ -245,6 +246,7 @@ class SmolTalk(ChatMLDataset):
             dataset = dataset.filter(
                 filter_by_max_tokens,
                 desc=f"Filtering samples longer than {max_tokens_per_sample} tokens",
+                num_proc=num_processes,
             )
 
         self.dataset = dataset
@@ -278,6 +280,7 @@ class UltraFeedbackSFT(ChatMLDataset):
         split: str,
         max_tokens_per_sample: int,
         filter_long_samples: bool,
+        num_processes: int,
     ):
         super().__init__(tokenizer, max_tokens_per_sample)
 
@@ -306,6 +309,7 @@ class UltraFeedbackSFT(ChatMLDataset):
             dataset = dataset.filter(
                 filter_by_max_tokens,
                 desc=f"Filtering samples longer than {max_tokens_per_sample} tokens",
+                num_proc=num_processes,
             )
 
         self.dataset = dataset

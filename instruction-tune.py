@@ -26,19 +26,18 @@ DATASET_SUBSETS = SmolTalk.SUBSETS | {"ultra-feedback"}
 
 def main():
     parser = ArgumentParser(
-        description="Instruction fine-tune and align the GPT using SFT."
+        description="Instruction-tune and align the GPT using supervised training."
     )
 
     csv_list = partial(str.split, sep=",")
 
-    parser.add_argument(
-        "--base_checkpoint_path", default="./checkpoints/checkpoint.pt", type=str
-    )
+    parser.add_argument("--base_checkpoint_path", required=True, type=str)
     parser.add_argument(
         "--dataset_subsets", default=["all", "ultra-feedback"], type=csv_list
     )
-    parser.add_argument("--max_tokens_per_sample", default=2048, type=int)
+    parser.add_argument("--max_tokens_per_sample", default=4096, type=int)
     parser.add_argument("--filter_long_samples", action="store_true")
+    parser.add_argument("--num_dataset_processes", default=8, type=int)
     parser.add_argument("--batch_size", default=2, type=int)
     parser.add_argument("--gradient_accumulation_steps", default=128, type=int)
     parser.add_argument("--learning_rate", default=1e-2, type=float)
@@ -52,10 +51,10 @@ def main():
     parser.add_argument("--eval_ratio", default=0.1, type=float)
     parser.add_argument("--checkpoint_interval", default=1, type=int)
     parser.add_argument(
-        "--checkpoint_path", default="./checkpoints/instruct.pt", type=str
+        "--checkpoint_path", default="./checkpoints/checkpoint.pt", type=str
     )
     parser.add_argument("--resume", action="store_true")
-    parser.add_argument("--run_dir_path", default="./runs/instruction-tune", type=str)
+    parser.add_argument("--run_dir_path", default="./runs", type=str)
     parser.add_argument("--device", default="cuda", type=str)
     parser.add_argument("--seed", default=None, type=int)
 
@@ -133,6 +132,7 @@ def main():
                 subset=subset,
                 max_tokens_per_sample=args.max_tokens_per_sample,
                 filter_long_samples=args.filter_long_samples,
+                num_processes=args.num_dataset_processes,
             )
 
             datasets.append(dataset)
@@ -143,6 +143,7 @@ def main():
                 split="train",
                 max_tokens_per_sample=args.max_tokens_per_sample,
                 filter_long_samples=args.filter_long_samples,
+                num_processes=args.num_dataset_processes,
             )
 
             datasets.append(dataset)

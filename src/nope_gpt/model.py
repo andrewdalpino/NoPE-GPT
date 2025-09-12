@@ -115,7 +115,7 @@ class NoPEGPT(Module, PyTorchModelHubMixin):
     def add_lora_parameters(self, rank: int, alpha: float) -> None:
         """Reparameterize the weights of the model using LoRA adapters."""
 
-        for module in self.decoder:
+        for module in self.decoder.layers:
             module.add_lora_adapters(rank, alpha)
 
     def merge_lora_parameters(self) -> None:
@@ -156,7 +156,7 @@ class NoPEGPT(Module, PyTorchModelHubMixin):
         self,
         prompt: Tensor,
         max_tokens: int = 2000,
-        context_length: int = 2048,
+        context_length: int = 4096,
         temperature: float = 1.0,
         top_k: int = 500,
         top_p: float = 0.9,

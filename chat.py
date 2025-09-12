@@ -29,7 +29,7 @@ def main():
     )
     parser.add_argument("--max_tokens", default=2000, type=int)
     parser.add_argument("--colorize_tokens", action="store_true")
-    parser.add_argument("--context_length", default=2048, type=int)
+    parser.add_argument("--context_length", default=4096, type=int)
     parser.add_argument("--temperature", default=0.7, type=float)
     parser.add_argument("--top_k", default=500, type=int)
     parser.add_argument("--top_p", default=0.9, type=float)
@@ -51,10 +51,14 @@ def main():
         random.seed(args.seed)
 
     checkpoint = torch.load(
-        args.base_checkpoint_path, map_location=args.device, weights_only=False
+        args.checkpoint_path, map_location=args.device, weights_only=False
     )
 
     tokenizer = checkpoint["tokenizer"]
+
+    tokenizer.im_end_index = tokenizer.tokenizer.encode(
+        "<|im_end|>", allowed_special="all"
+    )[0]
 
     model = NoPEGPT(**checkpoint["model_args"])
 
@@ -107,6 +111,8 @@ def main():
 
         messages = [system_message] + memory.get_history()
 
+        print(messages)
+
         tokens = tokenizer.tokenize_prompt(messages)
 
         prompt = torch.tensor(tokens, dtype=torch.int64, device=args.device)
@@ -116,7 +122,7 @@ def main():
         for token, probability in generate(prompt):
             token, probability = token.item(), probability.item()
 
-            if token == tokenizer.tokenizer.eot_token_id:
+            if token in tokenizer.stop_tokens:
                 break
 
             if args.colorize_tokens:
@@ -128,9 +134,7 @@ def main():
 
             color = fore_rgb(r, g, b)
 
-            out = tokenizer.decode_single_token_bytes(token).decode(
-                "utf-8", errors="replace"
-            )
+            out = tokenizer.decode_single_token(token)
 
             print(f"{color}{out}{style("reset")}", end="", flush=True)
 

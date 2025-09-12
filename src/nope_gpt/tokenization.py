@@ -7,7 +7,7 @@ class ChatMLTokenizer:
     START_TOKEN = "<|im_start|>"
     END_TOKEN = "<|im_end|>"
 
-    CHATML_TEMPLATE = "{START_TOKEN}{role}\n{message}\n{END_TOKEN}\n"
+    CHATML_TEMPLATE = "<|im_start|>{role}\n{message}\n<|im_end|>\n"
 
     RESPONSE_HEADER = "<|im_start|>assistant\n"
 
@@ -28,14 +28,26 @@ class ChatMLTokenizer:
 
         response_tokens = tokenizer.encode(self.RESPONSE_HEADER, allowed_special="all")
 
+        self.im_end_index = im_end_index
         self.tokenizer = tokenizer
         self.response_tokens = response_tokens
 
     @property
     def vocabulary_size(self) -> int:
-        """Return the size of the vocabulary."""
-
         return self.tokenizer.n_vocab
+
+    @property
+    def stop_tokens(self) -> set[int]:
+        return {self.tokenizer.eot_token, self.im_end_index}
+
+    def decode_single_token(self, token: int) -> str:
+        """Decode a single token into a string."""
+
+        out = self.tokenizer.decode_single_token_bytes(token).decode(
+            "utf-8", errors="replace"
+        )
+
+        return out
 
     def tokenize_prompt(self, messages: list[dict]) -> list[int]:
         """Tokenize a list of messages and add a response header."""

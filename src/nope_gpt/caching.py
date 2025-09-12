@@ -61,7 +61,7 @@ class DynamicKVBlock(Module):
 
         self.context_length: int = context_length
 
-    @torch.no_grad()
+    @torch.inference_mode()
     def update(self, k: Tensor, v: Tensor) -> tuple[Tensor, Tensor]:
         """Update the cache with a new key-value pairs.
 

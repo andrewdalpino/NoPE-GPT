@@ -62,7 +62,7 @@ def main():
     parser.add_argument("--ddp_sharding_level", default=2, choices={0, 2, 3}, type=int)
     parser.add_argument("--batch_size", default=2, type=int)
     parser.add_argument("--gradient_accumulation_steps", default=128, type=int)
-    parser.add_argument("--tokens_per_sample", default=2048, type=int)
+    parser.add_argument("--tokens_per_sample", default=4096, type=int)
     parser.add_argument("--max_steps", default=20000, type=int)
     parser.add_argument("--learning_rate", default=1e-2, type=float)
     parser.add_argument("--low_memory_optimizer", action="store_true")
