@@ -18,13 +18,14 @@ from torch.nn import (
     Parameter,
 )
 
-from torch.nn.functional import softmax, scaled_dot_product_attention
+from torch.nn.functional import scaled_dot_product_attention, softmax, log_softmax
 from torch.nn.utils.parametrize import register_parametrization, remove_parametrizations
 from torch.utils.checkpoint import checkpoint as torch_checkpoint
 
 from huggingface_hub import PyTorchModelHubMixin
 
 from src.nope_gpt.caching import KVCache, DynamicKVBlock
+from src.nope_gpt.search import Candidate
 
 
 class NoPEGPT(Module, PyTorchModelHubMixin):
@@ -137,7 +138,6 @@ class NoPEGPT(Module, PyTorchModelHubMixin):
 
         return z
 
-    @torch.no_grad()
     def predict(self, x: Tensor, kv_cache: KVCache) -> Tensor:
         """A forward pass optimized for next-token prediction."""
 
@@ -151,7 +151,7 @@ class NoPEGPT(Module, PyTorchModelHubMixin):
 
         return z
 
-    @torch.no_grad()
+    @torch.inference_mode()
     def generate(
         self,
         prompt: Tensor,
@@ -224,6 +224,98 @@ class NoPEGPT(Module, PyTorchModelHubMixin):
 
         return num_tokens
 
+    @torch.inference_mode()
+    def beam_search(
+        self,
+        prompt: Tensor,
+        max_tokens: int = 1000,
+        context_length: int = 4096,
+        num_candidates: int = 3,
+        beam_width: int = 16,
+        length_penalty: float = 1.0,
+        eos_indices: set = set(),
+    ) -> list[Candidate]:
+        """
+        Given a prompt, return the {num_candidates} highest probability sequences.
+        """
+
+        assert max_tokens > 0, "Max tokens must be greater than 0."
+        assert context_length > 0, "Context length must be greater than 0."
+        assert num_candidates > 0, "Num candidates must be greater than 0."
+        assert beam_width > 0, "Beam width must be greater than 0."
+        assert length_penalty > 0, "Length penalty must be greater than 0."
+
+        new_candidate = partial(Candidate, length_penalty=length_penalty)
+
+        sort_candidates = partial(
+            sorted,
+            key=lambda candidate: candidate.priority,
+            reverse=True,
+        )
+
+        candidates: list[Candidate] = []
+        completed: list[Candidate] = []
+
+        tokens = torch.tensor([], dtype=prompt.dtype).to(prompt.device)
+
+        candidates.append(new_candidate(0.0, tokens))
+
+        while len(candidates) > 0:
+            candidate = candidates.pop()
+
+            if len(completed) >= num_candidates:
+                completed = sort_candidates(completed)
+
+                completed = completed[:num_candidates]
+
+                worst_candidate = completed[-1]
+
+                if (
+                    candidate.cumulative_log_probability
+                    < worst_candidate.cumulative_log_probability
+                ):
+                    break
+
+            if len(candidate.tokens) > 0:
+                last_token = candidate.tokens[-1]
+
+                if last_token.item() in eos_indices:
+                    candidate.tokens = candidate.tokens[:-1]
+
+                    completed.append(candidate)
+
+                    continue
+
+            if len(candidate.tokens) >= max_tokens:
+                completed.append(candidate)
+
+                continue
+
+            context_window = torch.cat((prompt, candidate.tokens))
+
+            context_window = context_window[-context_length:]
+
+            logits = self.predict(context_window.unsqueeze(0)).squeeze()
+
+            logits, indices = torch.topk(logits, beam_width, sorted=False)
+
+            log_probabilities = log_softmax(logits, dim=0)
+
+            for log_probability, index in zip(log_probabilities, indices):
+                cumulative_log_probability = (
+                    candidate.cumulative_log_probability + log_probability
+                )
+
+                tokens = torch.cat((candidate.tokens, index.unsqueeze(0)))
+
+                candidates.append(new_candidate(cumulative_log_probability, tokens))
+
+            candidates = sort_candidates(candidates)
+
+            candidates = candidates[:beam_width]
+
+        return completed
+
 
 class Decoder(Module):
     """A stack of decoder blocks."""
@@ -275,7 +367,6 @@ class Decoder(Module):
 
         return x
 
-    @torch.no_grad()
     def predict(self, x: Tensor, kv_cache: KVCache) -> Tensor:
         """A forward pass optimized for next-token prediction."""
 
@@ -328,7 +419,6 @@ class DecoderBlock(Module):
 
         return z
 
-    @torch.no_grad()
     def predict(self, x: Tensor, kv_block: DynamicKVBlock) -> Tensor:
         """A forward pass optimized for next-token prediction."""
 
@@ -433,7 +523,6 @@ class SelfAttention(Module):
 
         return z
 
-    @torch.no_grad()
     def predict(self, x: Tensor, kv_block: DynamicKVBlock) -> Tensor:
         """A forward pass optimized for next-token prediction."""
 

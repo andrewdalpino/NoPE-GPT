@@ -15,7 +15,7 @@ from memory import BufferWindowMemory
 DEFAULT_SYSTEM_MESSAGE = (
     "You're a helpful AI assistant named NoPE GPT. "
     "Your job is to chat and answer questions. "
-    "If you don't know the answer to a question, say 'I don't know'. "
+    "If you don't know the answer to a question, say that you don't know. "
 )
 
 WHITE = (255, 255, 255)
@@ -55,10 +55,6 @@ def main():
     )
 
     tokenizer = checkpoint["tokenizer"]
-
-    tokenizer.im_end_index = tokenizer.tokenizer.encode(
-        "<|im_end|>", allowed_special="all"
-    )[0]
 
     model = NoPEGPT(**checkpoint["model_args"])
 
@@ -110,8 +106,6 @@ def main():
         memory.add_message(instruction_message)
 
         messages = [system_message] + memory.get_history()
-
-        print(messages)
 
         tokens = tokenizer.tokenize_prompt(messages)
 
