@@ -19,7 +19,7 @@ class BufferWindowMemory:
         self.messages.append(message)
 
         while len(self.messages) > self.max_messages:
-            _ = self.messages.popleft()
+            self.messages.popleft()
 
     def get_history(self) -> list[dict]:
         """Return the most recent chat history."""

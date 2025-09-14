@@ -175,7 +175,7 @@ class NoPEGPT(Module, PyTorchModelHubMixin):
         assert 0.0 <= repeat_penalty <= 1.0, "Repeat penalty must be between 0 and 1."
         assert repeat_window > 0, "Repeat window must be greater than 0."
 
-        kv_cache = KVCache(self, 1, context_length).to(prompt.device)
+        kv_cache = KVCache(self.decoder, 1, context_length).to(prompt.device)
 
         prompt = prompt[-context_length:]
 
@@ -228,7 +228,7 @@ class NoPEGPT(Module, PyTorchModelHubMixin):
     def beam_search(
         self,
         prompt: Tensor,
-        max_tokens: int = 1000,
+        max_tokens: int = 2000,
         context_length: int = 4096,
         num_candidates: int = 3,
         beam_width: int = 16,
@@ -256,7 +256,7 @@ class NoPEGPT(Module, PyTorchModelHubMixin):
         candidates: list[Candidate] = []
         completed: list[Candidate] = []
 
-        tokens = torch.tensor([], dtype=prompt.dtype).to(prompt.device)
+        tokens = torch.empty(0, dtype=prompt.dtype).to(prompt.device)
 
         candidates.append(new_candidate(0.0, tokens))
 
@@ -295,7 +295,9 @@ class NoPEGPT(Module, PyTorchModelHubMixin):
 
             context_window = context_window[-context_length:]
 
-            logits = self.predict(context_window.unsqueeze(0)).squeeze()
+            logits = self.forward(context_window.unsqueeze(0)).squeeze()
+
+            logits = logits[-1]
 
             logits, indices = torch.topk(logits, beam_width, sorted=False)
 
@@ -528,8 +530,6 @@ class SelfAttention(Module):
 
         b, t, d = x.size()
 
-        is_autoregressive_phase = t == 1
-
         q = self.q_proj.forward(x)
         k = self.k_proj.forward(x)
         v = self.v_proj.forward(x)
@@ -539,6 +539,8 @@ class SelfAttention(Module):
         v = v.view(b, t, self.num_kv_heads, self.head_dimensions).transpose(1, 2)
 
         k, v = kv_block.update(k, v)
+
+        is_autoregressive_phase = t == 1
 
         z = scaled_dot_product_attention(
             q,

@@ -7,9 +7,9 @@ from torch.nn import Module, ModuleList, Buffer
 
 
 class KVCache(Module):
-    """Key-value cache for all layers of the model."""
+    """Key-value cache for the decoder layers."""
 
-    def __init__(self, model: Module, batch_size: int, context_length: int):
+    def __init__(self, decoder: Module, batch_size: int, context_length: int):
         super().__init__()
 
         self.kv_blocks = ModuleList(
@@ -21,7 +21,7 @@ class KVCache(Module):
                     layer.stage1.num_kv_heads,
                     context_length,
                 )
-                for layer in model.decoder.layers
+                for layer in decoder.layers
             ]
         )
 
@@ -61,7 +61,6 @@ class DynamicKVBlock(Module):
 
         self.context_length: int = context_length
 
-    @torch.inference_mode()
     def update(self, k: Tensor, v: Tensor) -> tuple[Tensor, Tensor]:
         """Update the cache with a new key-value pairs.
 

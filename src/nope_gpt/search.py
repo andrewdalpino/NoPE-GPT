@@ -1,3 +1,5 @@
+from math import exp
+
 from dataclasses import dataclass
 
 from torch import Tensor
@@ -10,6 +12,10 @@ class Candidate:
     cumulative_log_probability: float
     tokens: Tensor
     length_penalty: float
+
+    @property
+    def cumulative_probability(self) -> float:
+        return exp(self.cumulative_log_probability)
 
     @property
     def priority(self) -> float:

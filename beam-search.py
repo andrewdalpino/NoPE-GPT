@@ -7,29 +7,23 @@ import torch
 
 from torch.cuda import is_available as cuda_is_available
 
-from colored import fore_rgb, style
-
 from src.nope_gpt.model import NoPEGPT
-
-WHITE = (255, 255, 255)
 
 
 def main():
     parser = ArgumentParser(
-        description="Generate text from the base model by sampling.",
+        description="Generate text from the base model using beam search.",
     )
 
     parser.add_argument(
         "--checkpoint_path", default="./checkpoints/checkpoint.pt", type=str
     )
     parser.add_argument("--max_tokens", default=2000, type=int)
-    parser.add_argument("--colorize_tokens", action="store_true")
     parser.add_argument("--context_length", default=4096, type=int)
     parser.add_argument("--temperature", default=0.9, type=float)
-    parser.add_argument("--top_k", default=500, type=int)
-    parser.add_argument("--top_p", default=0.9, type=float)
-    parser.add_argument("--repeat_penalty", default=0.1, type=float)
-    parser.add_argument("--repeat_window", default=50, type=int)
+    parser.add_argument("--num_candidates", default=3, type=int)
+    parser.add_argument("--beam_width", default=16, type=int)
+    parser.add_argument("--length_penalty", default=1.0, type=float)
     parser.add_argument("--device", default="cuda", type=str)
     parser.add_argument("--seed", default=None, type=int)
 
@@ -62,15 +56,16 @@ def main():
 
     model.eval()
 
-    generate = partial(
-        model.generate,
+    beam_search = partial(
+        model.beam_search,
         max_tokens=args.max_tokens,
         context_length=args.context_length,
-        temperature=args.temperature,
-        top_k=args.top_k,
-        top_p=args.top_p,
-        repeat_penalty=args.repeat_penalty,
-        repeat_window=args.repeat_window,
+        num_candidates=args.num_candidates,
+        beam_width=args.beam_width,
+        length_penalty=args.length_penalty,
+        eos_indices={
+            tokenizer.eot_token,
+        },
     )
 
     while True:
@@ -80,26 +75,16 @@ def main():
 
         prompt = torch.tensor(prompt, dtype=torch.int64, device=args.device)
 
-        for token, probability in generate(prompt):
-            token, probability = token.item(), probability.item()
+        candidates = beam_search(prompt)
 
-            if token == tokenizer.eot_token:
-                break
+        for i, candidate in enumerate(candidates, start=1):
+            out = tokenizer.decode(candidate.tokens.tolist())
 
-            out = tokenizer.decode_single_token_bytes(token).decode(
-                "utf-8", errors="replace"
+            print(
+                f"Candidate #{i} (Probability: {candidate.cumulative_probability:.4f})"
             )
 
-            if args.colorize_tokens:
-                intensity = int(probability * 255)
-
-                r, g, b = 255 - intensity, 0, intensity
-            else:
-                r, g, b = WHITE
-
-            color = fore_rgb(r, g, b)
-
-            print(f"{color}{out}{style("reset")}", end="", flush=True)
+            print(out)
 
         print("\n")
 
