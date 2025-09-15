@@ -38,8 +38,6 @@ def main():
     if "cuda" in args.device and not cuda_is_available():
         raise RuntimeError("Cuda is not available.")
 
-    torch.set_float32_matmul_precision("high")
-
     if args.seed is not None:
         torch.manual_seed(args.seed)
         random.seed(args.seed)

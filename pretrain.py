@@ -274,8 +274,9 @@ def main():
         with amp_context:
             y_pred = model.forward(x)
 
+            # Flatten the batch and time dimensions.
             y_pred = y_pred.view(-1, y_pred.size(-1))
-            y = y.view(-1)  # Flatten the batch dimension.
+            y = y.view(-1)
 
             loss = loss_function(y_pred, y)
 

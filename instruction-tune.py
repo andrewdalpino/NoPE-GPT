@@ -43,7 +43,7 @@ def main():
     parser.add_argument("--learning_rate", default=1e-2, type=float)
     parser.add_argument("--low_memory_optimizer", action="store_true")
     parser.add_argument("--max_gradient_norm", default=1.0, type=float)
-    parser.add_argument("--num_epochs", default=3, type=int)
+    parser.add_argument("--num_epochs", default=2, type=int)
     parser.add_argument("--rank", default=8, type=int)
     parser.add_argument("--alpha", default=1.0, type=float)
     parser.add_argument("--activation_checkpointing", action="store_true")
@@ -245,8 +245,9 @@ def main():
             with amp_context:
                 y_pred = model.forward(x)
 
+                # Flatten the batch and time dimensions.
                 y_pred = y_pred.view(-1, y_pred.size(-1))
-                y = y.view(-1)  # Flatten the batch dimension.
+                y = y.view(-1)
 
                 loss = loss_function(y_pred, y)
 

@@ -41,13 +41,13 @@ class ChatMLTokenizer:
         return {self.tokenizer.eot_token, self.im_end_index}
 
     def decode_single_token(self, token: int) -> str:
-        """Decode a single token into a string."""
+        """Decode a single token into text."""
 
-        out = self.tokenizer.decode_single_token_bytes(token).decode(
+        text = self.tokenizer.decode_single_token_bytes(token).decode(
             "utf-8", errors="replace"
         )
 
-        return out
+        return text
 
     def tokenize_prompt(self, messages: list[dict]) -> list[int]:
         """Tokenize a list of messages and add a response header."""

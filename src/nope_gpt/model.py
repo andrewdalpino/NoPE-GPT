@@ -123,11 +123,11 @@ class NoPEGPT(Module, PyTorchModelHubMixin):
         """Merge the LoRA parameters with the original parameters."""
 
         for module in self.modules():
-            if hasattr(module, "parametrizations"):
-                lora_params = [name for name in module.parametrizations.keys()]
+            if not hasattr(module, "parametrizations"):
+                continue
 
-                for name in lora_params:
-                    remove_parametrizations(module, name)
+            for name in module.parametrizations.keys():
+                remove_parametrizations(module, name)
 
     def forward(self, x: Tensor) -> Tensor:
         """A forward pass optimized for batch training."""
