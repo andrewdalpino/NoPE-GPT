@@ -74,19 +74,17 @@ def main():
     while True:
         prompt = input("Enter a prompt: ")
 
-        prompt = tokenizer.encode_ordinary(prompt)
+        prompt = tokenizer.tokenize(prompt)
 
         prompt = torch.tensor(prompt, dtype=torch.int64, device=args.device)
 
         for token, probability in generate(prompt):
             token, probability = token.item(), probability.item()
 
-            if token == tokenizer.eot_token:
+            if token in tokenizer.stop_tokens:
                 break
 
-            out = tokenizer.decode_single_token_bytes(token).decode(
-                "utf-8", errors="replace"
-            )
+            out = tokenizer.decode_single_token(token)
 
             if args.colorize_tokens:
                 intensity = int(probability * 255)

@@ -5,8 +5,6 @@ from functools import partial
 
 from datasets import load_dataset
 
-from tiktoken import Encoding
-
 import numpy as np
 
 import torch
@@ -15,7 +13,7 @@ from torch import Tensor
 from torch.utils.data import Dataset
 from torch.nn.utils.rnn import pad_sequence
 
-from src.nope_gpt.tokenization import ChatMLTokenizer
+from src.nope_gpt.tokenization import BaseTokenizer, ChatTokenizer
 
 from tqdm import tqdm
 
@@ -34,7 +32,7 @@ class Fineweb(Dataset):
 
     def __init__(
         self,
-        tokenizer: Encoding,
+        tokenizer: BaseTokenizer,
         root_path: str,
         subset: str | None,
         tokens_per_sample: int,
@@ -114,9 +112,9 @@ class Fineweb(Dataset):
         self.max_offset = max_offset
 
     def tokenize(self, sample: dict) -> dict:
-        tokens = self.tokenizer.encode_ordinary(sample["text"])
+        tokens = self.tokenizer.tokenize(sample["text"])
 
-        tokens.append(self.tokenizer.eot_token)
+        tokens.append(self.tokenizer.eos_token)
 
         return {
             "tokens": tokens,
@@ -147,7 +145,7 @@ class ChatMLDataset(Dataset):
 
     IGNORE_INDEX = -100
 
-    def __init__(self, tokenizer: ChatMLTokenizer, max_tokens_per_sample: int):
+    def __init__(self, tokenizer: ChatTokenizer, max_tokens_per_sample: int):
         assert max_tokens_per_sample > 0, "max_tokens_per_sample must be positive"
 
         self.tokenizer = tokenizer
@@ -218,7 +216,7 @@ class SmolTalk(ChatMLDataset):
 
     def __init__(
         self,
-        tokenizer: ChatMLTokenizer,
+        tokenizer: ChatTokenizer,
         subset: str,
         max_tokens_per_sample: int,
         filter_long_samples: bool,
@@ -276,7 +274,7 @@ class UltraFeedbackSFT(ChatMLDataset):
 
     def __init__(
         self,
-        tokenizer: ChatMLTokenizer,
+        tokenizer: ChatTokenizer,
         split: str,
         max_tokens_per_sample: int,
         filter_long_samples: bool,

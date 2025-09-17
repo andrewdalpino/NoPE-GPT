@@ -17,7 +17,8 @@ from torch.utils.tensorboard import SummaryWriter
 from torchmetrics.text import Perplexity
 
 from src.nope_gpt.model import NoPEGPT
-from data import ChatMLTokenizer, SmolTalk, UltraFeedbackSFT, pad_collate, IGNORE_INDEX
+from src.nope_gpt.tokenization import ChatTokenizer
+from data import SmolTalk, UltraFeedbackSFT, pad_collate, IGNORE_INDEX
 
 from tqdm import tqdm
 
@@ -121,7 +122,7 @@ def main():
         args.base_checkpoint_path, map_location=args.device, weights_only=False
     )
 
-    tokenizer = ChatMLTokenizer(checkpoint["tokenizer"])
+    tokenizer = ChatTokenizer(checkpoint["tokenizer"])
 
     datasets = []
 

@@ -26,9 +26,8 @@ from torchdata.stateful_dataloader import StatefulDataLoader
 
 from torchmetrics.text import Perplexity
 
-import tiktoken
-
 from data import Fineweb, IGNORE_INDEX
+from src.nope_gpt.tokenization import BaseTokenizer
 from src.nope_gpt.model import NoPEGPT
 
 from tqdm import tqdm
@@ -45,7 +44,9 @@ DDP_BACKEND = "nccl"
 
 
 def main():
-    parser = ArgumentParser(description="Pretrain the GPT.")
+    parser = ArgumentParser(
+        description="Train the base GPT using self-supervised learning."
+    )
 
     parser.add_argument(
         "--dataset_subset",
@@ -151,7 +152,7 @@ def main():
 
     logger = SummaryWriter(args.run_dir_path)
 
-    tokenizer = tiktoken.get_encoding(args.token_encoding)
+    tokenizer = BaseTokenizer.from_pretrained(args.token_encoding)
 
     dataset = Fineweb(
         root_path=args.dataset_path,
@@ -188,7 +189,7 @@ def main():
     )
 
     model_args = {
-        "vocabulary_size": tokenizer.n_vocab,
+        "vocabulary_size": tokenizer.vocabulary_size,
         "embedding_dimensions": args.embedding_dimensions,
         "num_q_heads": args.num_q_heads,
         "num_kv_heads": args.num_kv_heads,
