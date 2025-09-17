@@ -1,15 +1,51 @@
-from typing import Self
+from typing import Self, Union, Optional
 from functools import cached_property
+from pathlib import Path
+from json import dump as save_json, load as load_json
 
 from tiktoken import Encoding, get_encoding
 
+from huggingface_hub import ModelHubMixin, hf_hub_download
 
-class BaseTokenizer:
+
+class BaseTokenizer(ModelHubMixin):
     @classmethod
-    def from_pretrained(cls, name: str) -> Self:
+    def from_tiktoken(cls, name: str) -> Self:
         """Instantiate a tokenizer from a pretrained tiktoken tokenizer."""
 
         return cls(get_encoding(name))
+
+    @classmethod
+    def _from_pretrained(
+        cls,
+        *,
+        model_id: str,
+        revision: Optional[str],
+        cache_dir: Optional[Union[str, Path]],
+        force_download: bool,
+        proxies: Optional[dict],
+        resume_download: Optional[bool],
+        local_files_only: bool,
+        token: Union[str, bool, None],
+    ):
+        config_path = hf_hub_download(
+            repo_id=model_id,
+            filename="tokenizer.json",
+            revision=revision,
+            cache_dir=cache_dir,
+            force_download=force_download,
+            proxies=proxies,
+            resume_download=resume_download,
+            local_files_only=local_files_only,
+            token=token,
+        )
+
+        with open(config_path, "r") as file:
+            config = load_json(file)
+
+        tokenizer = cls.from_tiktoken(config["name"])
+
+        return tokenizer
 
     def __init__(self, tokenizer: Encoding):
         self.tokenizer = tokenizer
@@ -23,12 +59,18 @@ class BaseTokenizer:
         return self.tokenizer.n_vocab
 
     @property
-    def eos_token(self) -> int:
-        return self.tokenizer.eot_token
-
-    @property
     def stop_tokens(self) -> set[int]:
-        return {self.eos_token}
+        return {self.tokenizer.eot_token}
+
+    def _save_pretrained(self, save_directory: Union[str, Path]) -> None:
+        save_path = save_directory / "tokenizer.json"
+
+        config = {
+            "name": self.name,
+        }
+
+        with open(save_path, "w") as file:
+            save_json(config, file)
 
     def add_special_tokens(self, tokens: list[str]) -> None:
         start_index = self.vocabulary_size
@@ -70,6 +112,13 @@ class BaseTokenizer:
 
         return tokens[0]
 
+    def decode_tokens(self, tokens: list[int]) -> str:
+        """Decode a list of tokens into text."""
+
+        text = self.tokenizer.decode(tokens).strip()
+
+        return text
+
     def decode_single_token(self, token: int) -> str:
         """Decode a single token into text."""
 
@@ -80,7 +129,7 @@ class BaseTokenizer:
         return text
 
 
-class ChatTokenizer:
+class ChatTokenizer(ModelHubMixin):
     """Tokenizer for multi-turn ChatML-formatted messages with tool calls."""
 
     IM_START_TOKEN = "<|im_start|>"
@@ -92,6 +141,40 @@ class ChatTokenizer:
     CHATML_TEMPLATE = "<|im_start|>{role}\n{message}\n<|im_end|>\n"
 
     RESPONSE_HEADER = "<|im_start|>assistant\n"
+
+    @classmethod
+    def _from_pretrained(
+        cls,
+        *,
+        model_id: str,
+        revision: Optional[str],
+        cache_dir: Optional[Union[str, Path]],
+        force_download: bool,
+        proxies: Optional[dict],
+        resume_download: Optional[bool],
+        local_files_only: bool,
+        token: Union[str, bool, None],
+    ):
+        config_path = hf_hub_download(
+            repo_id=model_id,
+            filename="tokenizer.json",
+            revision=revision,
+            cache_dir=cache_dir,
+            force_download=force_download,
+            proxies=proxies,
+            resume_download=resume_download,
+            local_files_only=local_files_only,
+            token=token,
+        )
+
+        with open(config_path, "r") as file:
+            config = load_json(file)
+
+        tokenizer = BaseTokenizer.from_tiktoken(config["name"])
+
+        tokenizer = cls(tokenizer)
+
+        return tokenizer
 
     def __init__(self, tokenizer: BaseTokenizer):
         tokenizer.add_special_tokens(
@@ -111,9 +194,23 @@ class ChatTokenizer:
         self.response_tokens = response_tokens
         self.tokenizer = tokenizer
 
+    @property
+    def vocabulary_size(self) -> int:
+        return self.tokenizer.n_vocab
+
     @cached_property
     def stop_tokens(self) -> set[int]:
         return self.tokenizer.stop_tokens | {self.im_end_index}
+
+    def _save_pretrained(self, save_directory: Union[str, Path]) -> None:
+        save_path = save_directory / "tokenizer.json"
+
+        config = {
+            "name": self.name,
+        }
+
+        with open(save_path, "w") as file:
+            save_json(config, file)
 
     def tokenize_prompt(self, messages: list[dict]) -> list[int]:
         """Tokenize a list of messages and add a response header."""
@@ -138,6 +235,9 @@ class ChatTokenizer:
         tokens = self.tokenizer.tokenize_with_special(text)
 
         return tokens
+
+    def decode_tokens(self, tokens: list[int]) -> str:
+        return self.tokenizer.decode_tokens(tokens)
 
     def decode_single_token(self, token: int) -> str:
         return self.tokenizer.decode_single_token(token)

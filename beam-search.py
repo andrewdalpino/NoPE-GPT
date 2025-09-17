@@ -61,26 +61,26 @@ def main():
         num_candidates=args.num_candidates,
         beam_width=args.beam_width,
         length_penalty=args.length_penalty,
-        eos_indices={
-            tokenizer.eot_token,
-        },
+        eos_indices=tokenizer.stop_tokens,
     )
 
     while True:
         prompt = input("Enter a prompt: ")
 
-        prompt = tokenizer.encode_ordinary(prompt)
+        prompt = tokenizer.tokenize(prompt)
 
         prompt = torch.tensor(prompt, dtype=torch.int64, device=args.device)
 
         candidates = beam_search(prompt)
 
         for i, candidate in enumerate(candidates, start=1):
-            out = tokenizer.decode(candidate.tokens.tolist())
-
             print(
                 f"Candidate #{i} (Probability: {candidate.cumulative_probability:.4f})"
             )
+
+            print("-" * 40)
+
+            out = tokenizer.decode_tokens(candidate.tokens.tolist())
 
             print(out)
 

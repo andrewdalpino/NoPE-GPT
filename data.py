@@ -51,6 +51,8 @@ class Fineweb(Dataset):
 
         bin_path = path.join(root_path, f"{dataset_name}-{tokenizer.name}.bin")
 
+        self.eos_token = tokenizer.tokenizer.eot_token
+
         self.tokenizer = tokenizer
 
         if not path.exists(bin_path):
@@ -114,7 +116,7 @@ class Fineweb(Dataset):
     def tokenize(self, sample: dict) -> dict:
         tokens = self.tokenizer.tokenize(sample["text"])
 
-        tokens.append(self.tokenizer.eos_token)
+        tokens.append(self.eos_token)
 
         return {
             "tokens": tokens,
@@ -150,6 +152,16 @@ class ChatMLDataset(Dataset):
 
         self.tokenizer = tokenizer
         self.max_tokens_per_sample = max_tokens_per_sample
+
+    def filter_by_max_tokens(self, sample: dict) -> bool:
+        tokens = []
+
+        for message in sample["messages"]:
+            tokens.extend(self.tokenizer.tokenize_message(message))
+
+        keep = len(tokens) < self.max_tokens_per_sample
+
+        return keep
 
     def tokenize_messages(self, messages: list[dict]) -> tuple[list, list]:
         sample, labels = [], []
@@ -230,19 +242,9 @@ class SmolTalk(ChatMLDataset):
 
         dataset = load_dataset(self.DATASET_NAME, subset, split="train")
 
-        def filter_by_max_tokens(sample: dict) -> bool:
-            tokens = []
-
-            for message in sample["messages"]:
-                tokens.extend(tokenizer.tokenize_message(message))
-
-            keep = len(tokens) < max_tokens_per_sample
-
-            return keep
-
         if filter_long_samples:
             dataset = dataset.filter(
-                filter_by_max_tokens,
+                self.filter_by_max_tokens,
                 desc=f"Filtering samples longer than {max_tokens_per_sample} tokens",
                 num_proc=num_processes,
             )
@@ -293,19 +295,9 @@ class UltraFeedbackSFT(ChatMLDataset):
         else:
             dataset = new_dataset(split="test_sft")
 
-        def filter_by_max_tokens(sample: dict) -> bool:
-            tokens = []
-
-            for message in sample["messages"]:
-                tokens.extend(tokenizer.tokenize_message(message))
-
-            keep = len(tokens) < max_tokens_per_sample
-
-            return keep
-
         if filter_long_samples:
             dataset = dataset.filter(
-                filter_by_max_tokens,
+                self.filter_by_max_tokens,
                 desc=f"Filtering samples longer than {max_tokens_per_sample} tokens",
                 num_proc=num_processes,
             )

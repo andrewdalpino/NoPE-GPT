@@ -152,7 +152,7 @@ def main():
 
     logger = SummaryWriter(args.run_dir_path)
 
-    tokenizer = BaseTokenizer.from_pretrained(args.token_encoding)
+    tokenizer = BaseTokenizer.from_tiktoken(args.token_encoding)
 
     dataset = Fineweb(
         root_path=args.dataset_path,

@@ -139,7 +139,7 @@ class NoPEGPT(Module, PyTorchModelHubMixin):
         return z
 
     def predict(self, x: Tensor, kv_cache: KVCache) -> Tensor:
-        """A forward pass optimized for next-token prediction."""
+        """A forward pass optimized for autoregressive next-token prediction."""
 
         z = self.token_embeddings.forward(x)
         z = self.decoder.predict(z, kv_cache)
@@ -362,16 +362,12 @@ class Decoder(Module):
             layer.add_lora_adapters(rank, alpha)
 
     def forward(self, x: Tensor) -> Tensor:
-        """A forward pass optimized for batch training."""
-
         for layer in self.layers:
             x = self.checkpoint(layer, x)
 
         return x
 
     def predict(self, x: Tensor, kv_cache: KVCache) -> Tensor:
-        """A forward pass optimized for next-token prediction."""
-
         for layer, kv_block in zip(self.layers, kv_cache):
             x = layer.predict(x, kv_block)
 
@@ -407,8 +403,6 @@ class DecoderBlock(Module):
         self.stage2.add_lora_adapters(rank, alpha)
 
     def forward(self, x: Tensor) -> Tensor:
-        """A forward pass optimized for batch training."""
-
         z = self.norm1.forward(x)
         z = self.stage1.forward(z)
 
@@ -422,8 +416,6 @@ class DecoderBlock(Module):
         return z
 
     def predict(self, x: Tensor, kv_block: DynamicKVBlock) -> Tensor:
-        """A forward pass optimized for next-token prediction."""
-
         z = self.norm1.forward(x)
         z = self.stage1.predict(z, kv_block)
 
@@ -454,6 +446,10 @@ class SelfAttention(Module):
         assert num_kv_heads > 0, "Number of key-value heads must be greater than 0."
 
         assert (
+            num_q_heads >= num_kv_heads
+        ), "Number of query heads must be greater than or equal to the number of key-value heads."
+
+        assert (
             embedding_dimensions % num_q_heads == 0
         ), "Embedding dimensions must be divisible by the number of query heads."
 
@@ -469,15 +465,15 @@ class SelfAttention(Module):
 
         scale: float = 1.0 / sqrt(head_dimensions)
 
-        is_gqa: bool = num_q_heads != num_kv_heads
+        is_gqa: bool = num_q_heads > num_kv_heads
 
-        self.embedding_dimensions: int = embedding_dimensions
-        self.num_q_heads: int = num_q_heads
-        self.num_kv_heads: int = num_kv_heads
-        self.head_dimensions: int = head_dimensions
-        self.scale: float = scale
-        self.is_gqa: bool = is_gqa
-        self.dropout: float = dropout
+        self.embedding_dimensions = embedding_dimensions
+        self.num_q_heads = num_q_heads
+        self.num_kv_heads = num_kv_heads
+        self.head_dimensions = head_dimensions
+        self.scale = scale
+        self.is_gqa = is_gqa
+        self.dropout = dropout
 
     def add_lora_adapters(self, rank: int, alpha: float) -> None:
         """Reparameterize the weights of the attention module using LoRA adapters."""
@@ -526,8 +522,6 @@ class SelfAttention(Module):
         return z
 
     def predict(self, x: Tensor, kv_block: DynamicKVBlock) -> Tensor:
-        """A forward pass optimized for next-token prediction."""
-
         b, t, d = x.size()
 
         q = self.q_proj.forward(x)
