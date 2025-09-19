@@ -43,10 +43,10 @@ def main():
     parser.add_argument("--gradient_accumulation_steps", default=128, type=int)
     parser.add_argument("--learning_rate", default=1e-2, type=float)
     parser.add_argument("--low_memory_optimizer", action="store_true")
-    parser.add_argument("--max_gradient_norm", default=1.0, type=float)
+    parser.add_argument("--max_gradient_norm", default=10.0, type=float)
     parser.add_argument("--num_epochs", default=2, type=int)
-    parser.add_argument("--rank", default=8, type=int)
-    parser.add_argument("--alpha", default=1.0, type=float)
+    parser.add_argument("--lora_rank", default=8, type=int)
+    parser.add_argument("--lora_alpha", default=1.0, type=float)
     parser.add_argument("--activation_checkpointing", action="store_true")
     parser.add_argument("--eval_interval", default=1, type=int)
     parser.add_argument("--eval_ratio", default=0.1, type=float)
@@ -156,7 +156,9 @@ def main():
     training, testing = random_split(dataset, (training_ratio, args.eval_ratio))
 
     right_pad_collate = partial(
-        pad_collate, padding_side="right", padding_index=tokenizer.tokenizer.eot_token
+        pad_collate,
+        padding_side="right",
+        padding_index=tokenizer.pad_token,
     )
 
     new_dataloader = partial(
@@ -190,8 +192,8 @@ def main():
     model.resize_token_embeddings(tokenizer.vocabulary_size)
 
     lora_args = {
-        "rank": args.rank,
-        "alpha": args.alpha,
+        "rank": args.lora_rank,
+        "alpha": args.lora_alpha,
     }
 
     model.add_lora_parameters(**lora_args)

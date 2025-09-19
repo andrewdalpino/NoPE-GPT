@@ -59,6 +59,10 @@ class BaseTokenizer(ModelHubMixin):
         return self.tokenizer.n_vocab
 
     @property
+    def pad_token(self) -> int:
+        return self.tokenizer.eot_token
+
+    @property
     def stop_tokens(self) -> set[int]:
         return {self.tokenizer.eot_token}
 
@@ -196,7 +200,11 @@ class ChatTokenizer(ModelHubMixin):
 
     @property
     def vocabulary_size(self) -> int:
-        return self.tokenizer.n_vocab
+        return self.tokenizer.vocabulary_size
+
+    @property
+    def pad_token(self) -> int:
+        return self.tokenizer.pad_token
 
     @cached_property
     def stop_tokens(self) -> set[int]:

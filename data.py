@@ -288,7 +288,7 @@ class UltraFeedbackSFT(ChatMLDataset):
             f"Invalid split, {split} given. " f"Valid splits are: 'train', 'test'."
         )
 
-        new_dataset = partial(load_dataset, name=self.DATASET_NAME)
+        new_dataset = partial(load_dataset, self.DATASET_NAME)
 
         if split == "train":
             dataset = new_dataset(split="train_sft")

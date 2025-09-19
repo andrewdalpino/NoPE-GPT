@@ -67,7 +67,7 @@ def main():
     parser.add_argument("--max_steps", default=20000, type=int)
     parser.add_argument("--learning_rate", default=1e-2, type=float)
     parser.add_argument("--low_memory_optimizer", action="store_true")
-    parser.add_argument("--max_gradient_norm", default=1.0, type=float)
+    parser.add_argument("--max_gradient_norm", default=10.0, type=float)
     parser.add_argument("--embedding_dimensions", default=1024, type=int)
     parser.add_argument("--num_q_heads", default=16, type=int)
     parser.add_argument("--num_kv_heads", default=4, type=int)
