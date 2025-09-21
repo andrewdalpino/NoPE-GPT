@@ -126,7 +126,9 @@ class NoPEGPT(Module, PyTorchModelHubMixin):
             if not hasattr(module, "parametrizations"):
                 continue
 
-            for name in module.parametrizations.keys():
+            lora_params = [name for name in module.parametrizations.keys()]
+
+            for name in lora_params:
                 remove_parametrizations(module, name)
 
     def forward(self, x: Tensor) -> Tensor:

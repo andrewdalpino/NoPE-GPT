@@ -49,7 +49,7 @@ def main():
     parser.add_argument("--lora_alpha", default=1.0, type=float)
     parser.add_argument("--activation_checkpointing", action="store_true")
     parser.add_argument("--eval_interval", default=1, type=int)
-    parser.add_argument("--eval_ratio", default=0.1, type=float)
+    parser.add_argument("--num_eval_samples", default=2048, type=int)
     parser.add_argument("--checkpoint_interval", default=1, type=int)
     parser.add_argument(
         "--checkpoint_path", default="./checkpoints/checkpoint.pt", type=str
@@ -87,11 +87,6 @@ def main():
     if args.eval_interval < 1:
         raise ValueError(
             f"Eval interval must be greater than 0, {args.eval_interval} given."
-        )
-
-    if args.eval_ratio < 0 or args.eval_ratio > 1:
-        raise ValueError(
-            f"Eval ratio must be between 0 and 1, {args.eval_ratio} given."
         )
 
     if args.checkpoint_interval < 1:
@@ -151,9 +146,9 @@ def main():
 
     dataset = ConcatDataset(datasets)
 
-    training_ratio = 1.0 - args.eval_ratio
+    n_train_samples = len(dataset) - args.num_eval_samples
 
-    training, testing = random_split(dataset, (training_ratio, args.eval_ratio))
+    training, testing = random_split(dataset, [n_train_samples, args.num_eval_samples])
 
     right_pad_collate = partial(
         pad_collate,
@@ -198,7 +193,7 @@ def main():
 
     model.add_lora_parameters(**lora_args)
 
-    print("LoRA parameters added")
+    print("Added LoRA adapters")
 
     print(f"Model has {model.num_trainable_params:,} trainable parameters")
 
