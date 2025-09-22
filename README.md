@@ -154,6 +154,14 @@ You're done! For more advanced usages take a look at the `generate.py` and `chat
 
 In addition to the inference code, we also provide training and fine-tuning code so you can build your own NoPE GPT models. Before getting started, take a look at the `model_sizing.ipynb` IPython notebook in the project repo for a guide to sizing your model based on the amount of memory and compute you have available.
 
+### Clone the project repo
+
+We'll need the code from the project repository to train and/or fine-tune the model.
+
+```
+git clone https://andrewdalpino/NoPE-GPT
+```
+
 ### Install Project Dependencies
 
 Project dependencies are specified in the `requirements.txt` file. You can install them with [pip](https://pip.pypa.io/en/stable/) using the following command from the project root. We recommend using a virtual environment such as `venv` to keep package dependencies on your system tidy.
