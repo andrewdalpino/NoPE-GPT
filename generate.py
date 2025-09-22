@@ -30,7 +30,7 @@ def main():
     parser.add_argument("--top_p", default=0.9, type=float)
     parser.add_argument("--repeat_penalty", default=0.1, type=float)
     parser.add_argument("--repeat_window", default=50, type=int)
-    parser.add_argument("--device", default="cuda", type=str)
+    parser.add_argument("--device", default="cpu", type=str)
     parser.add_argument("--seed", default=None, type=int)
 
     args = parser.parse_args()
@@ -79,9 +79,7 @@ def main():
         prompt = torch.tensor(prompt, dtype=torch.int64, device=args.device)
 
         for token, probability in generate(prompt):
-            token, probability = token.item(), probability.item()
-
-            if token in tokenizer.stop_tokens:
+            if token.item() in tokenizer.stop_tokens:
                 break
 
             out = tokenizer.decode_single_token(token)

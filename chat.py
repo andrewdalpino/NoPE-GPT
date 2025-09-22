@@ -10,7 +10,7 @@ from torch.cuda import is_available as cuda_is_available
 from colored import fore_rgb, style
 
 from src.nope_gpt.model import NoPEGPT
-from memory import BufferWindowMemory
+from nope_gpt.memory import BufferWindowMemory
 
 DEFAULT_SYSTEM_MESSAGE = (
     "You're a helpful AI assistant named NoPE GPT. "
@@ -94,14 +94,14 @@ def main():
     )
 
     while True:
-        instruction_message = input("Enter a prompt: ")
+        prompt = input("Enter a prompt: ")
 
-        instruction_message = {
+        user_message = {
             "role": "user",
-            "content": instruction_message,
+            "content": prompt,
         }
 
-        memory.add_message(instruction_message)
+        memory.add_message(user_message)
 
         messages = [system_message] + memory.get_history()
 
@@ -137,12 +137,12 @@ def main():
         if "y" not in input("Go again? (yes|no): ").lower():
             break
 
-        response_message = {
+        assistant_message = {
             "role": "assistant",
             "content": response,
         }
 
-        memory.add_message(response_message)
+        memory.add_message(assistant_message)
 
 
 if __name__ == "__main__":

@@ -1,38 +1,160 @@
 # NoPE GPT
 
-NoPE GPT is a generative pretrained Transformer (GPT) language model with no positional embeddings (NoPE). Built using [PyTorch](https://pytorch.org/) and trained on HuggingFace's [Fineweb](https://huggingface.co/datasets/HuggingFaceFW/fineweb), [SmolTalk](https://huggingface.co/datasets/HuggingFaceTB/smoltalk), and [UltraFeedback](https://huggingface.co/datasets/HuggingFaceH4/ultrafeedback_binarized) datasets, NoPE GPT can answer questions, follow instructions, summarize documents, chat, and more.
+NoPE GPT is a generative pretrained Transformer-style (GPT) language model with no positional embeddings (NoPE). Built using [PyTorch](https://pytorch.org/) and trained on HuggingFace's [Fineweb](https://huggingface.co/datasets/HuggingFaceFW/fineweb), [SmolTalk](https://huggingface.co/datasets/HuggingFaceTB/smoltalk), and [UltraFeedback](https://huggingface.co/datasets/HuggingFaceH4/ultrafeedback_binarized) datasets, NoPE GPT can answer questions, summarize documents, use tools, and more.
 
 ## Features
 
 - **No positional embeddings (NoPE)**: NoPE GPT aims to be a more parsimonious model by completely removing positional embeddings from the architecture allowing the context length to vary without complex model surgery. Despite having no positional embeddings, NoPE GPT performs better at context length generalization than the best relative embeddings (ALiBi, RoPE, T5) offering good performance even when operating within 2X the trained context window.
 
-- **Fully Open-source**: Unlike closed-source LLMs, NoPE GPT provides both the model weights *and* the source code to train, fine-tune, export, and generate text from the model using your own hardware. With the help of the open-source software community, we aim to democratize access to AI and continually improve the models.
+- **Fast and memory-efficient**: NoPE GPT employs a number of training and inference-time optimizations such as KV-caching, Group Query Attention, activation checkpointing, and Fully-sharded Data Parallel pretraining. As such, you can train and infer using relatively modest hardware.
+
+- **Fully Open-source**: Unlike closed-source LLMs, NoPE GPT provides both the model weights *and* the source code to train, fine-tune, export, and generate text from the model using your own hardware.
 
 ## Pretrained Models
 
 | Name | Vocab. Size | Embedding Dim. | Query Heads | Key/Value Heads | Hidden Ratio | Layers | Parameters |
 |---|---|---|---|---|---|---|---|
+| [NoPE-GPT-400M-Chat](https://huggingface.co/andrewdalpino/NoPE-GPT-400M-Chat) | 50,261 | 1280 | 20 | 5 | 4X | 20 | 408M |
 | [NoPE-GPT-400M-Base](https://huggingface.co/andrewdalpino/NoPE-GPT-400M-Base) | 50,257 | 1280 | 20 | 5 | 4X | 20 | 408M |
 
-## Pretrained Example
+## Installation
 
-To load one of the pretrained models from HuggingFace Hub, first install the `nope-gpt` package into your project. 
+The code required to run inference comes as a Python package that you can install with your favorite package manager such as [pip](https://pypi.org/project/pip/).
 
 ```sh
 pip install nope-gpt
 ```
 
-Then, import the NoPEGPT class and call the `from_pretrained()` method with the name of the model you want to load.
+## Pretrained Examples
+
+This first example we'll show how to load a pretrained base model from HuggingFace Hub and then use it to generate text. First, make sure the `nope-gpt` package is installed into your project. Once the package is installed you can load pretrained weights from HuggingFace Hub like in the example below.
 
 ```python
-from nope_gpt import NoPEGPT
+from nope_gpt.model import NoPEGPT
+from nope_gpt.tokenization import ChatTokenizer
 
 model_name = "andrewdalpino/NoPE-GPT-400M-Base"
 
 model = NoPEGPT.from_pretrained(model_name)
+
+tokenizer = ChatTokenizer.from_pretrained(model_name)
 ```
 
-## Install Project Dependencies
+Then, to generate text, provide a prompt, tokenize it, and iterate through the `generate()` method until the model outputs a stop token.
+
+```python
+import torch
+
+prompt = input("Enter a prompt: ")
+
+prompt = tokenizer.tokenize(prompt)
+
+prompt = torch.tensor(prompt, dtype=torch.int64)
+
+for token, probability in model.generate(prompt):
+    if token.item() in tokenizer.stop_tokens:
+        break
+
+    out = tokenizer.decode_single_token(token)
+
+    print(out, end="", flush=True)
+```
+
+Generating text from the base model is the simplest way to get started with model inference, however, it is not the most useful when it comes to being able to chat with and guide the model output. In this example we'll load one of the pretrained chat models from HuggingFace Hub and then chat with it. In addition, we'll make use of short-term memory so the model can remember the chat history.
+
+First, load a pretrained chat model from HuggingFace Hub like in the example below.
+
+```python
+from nope_gpt.model import NoPEGPT
+from nope_gpt.tokenization import ChatTokenizer
+
+model_name = "andrewdalpino/NoPE-GPT-400M-Chat"
+
+model = NoPEGPT.from_pretrained(model_name)
+
+tokenizer = ChatTokenizer.from_pretrained(model_name)
+```
+
+Then, we'll define a partial function that will generate tokens with a set of default parameters such as `max_tokens`, `context_length`, and `temperature`.
+
+```python
+from functools import partial
+
+generate = partial(
+    model.generate,
+    max_tokens=2000,
+    context_length=8192,
+    temperature=0.7,
+    top_k=500
+    top_p=0.9,
+    repeat_penalty=0.1,
+    repeat_window=50,
+)
+```
+
+Next, we'll instantiate a `BufferWindowMemory` object to handle the chat history and craft a system message that will guide generation. Note that messages are inputted as dicts with `role` and `content` keys. For a system message use the `system` role.
+
+```python
+from nope_gpt.memory import BufferWindowMemory
+
+memory = BufferWindowMemory(4)
+
+system_message = {
+    "role": "system",
+    "content": "You are a friendly AI assistant.",
+}
+```
+
+Finally, prompt the user for input, adds the system message and chat history to the context, tokenizes the messages, and then generates the `assistant` response.
+
+```python
+import torch
+
+while True:
+    prompt = input("Enter a prompt: ")
+
+    user_message = {
+        "role": "user",
+        "content": prompt,
+    }
+
+    memory.add_message(user_message)
+
+    messages = [system_message] + memory.get_history()
+
+    tokens = tokenizer.tokenize_prompt(messages)
+
+    prompt = torch.tensor(tokens, dtype=torch.int64, device=args.device)
+
+    response = ""
+
+    for token, probability in generate(prompt):
+        if token.item() in tokenizer.stop_tokens:
+            break
+
+        out = tokenizer.decode_single_token(token)
+
+        print(out, end="", flush=True)
+
+        response += out
+
+    print("\n")
+
+    assistant_message = {
+        "role": "assistant",
+        "content": response,
+    }
+
+    memory.add_message(assistant_message)
+```
+
+You're done! For more advanced usages take a look at the `generate.py` and `chat.py` scripts located in the code repository.
+
+## Training and Fine-tuning
+
+In addition to the inference code, we also provide training and fine-tuning code so you can build your own NoPE GPT models. Before getting started, take a look at the `model_sizing.ipynb` IPython notebook in the project repo for a guide to sizing your model based on the amount of memory and compute you have available.
+
+### Install Project Dependencies
 
 Project dependencies are specified in the `requirements.txt` file. You can install them with [pip](https://pip.pypa.io/en/stable/) using the following command from the project root. We recommend using a virtual environment such as `venv` to keep package dependencies on your system tidy.
 
@@ -44,9 +166,9 @@ source ./.venv/bin/activate
 pip install -r requirements.txt
 ```
 
-## Pretraining
+### Pretraining
 
-When we pre-train NoPE GPT we are focused on building a foundation of language and general knowledge to use as a base for further specialized training. The training objective is to predict the next token in a sample of text. It is a self-supervised form of training because the model learns from masked inputs of unsupervised data. For the pretraining corpus we use the Fineweb dataset which consists of about 15T high-quality tokens gathered from the worldwide web. The dataset has been split into 3 subsets (10BT, 100BT, and 350BT versions) for training smaller models. If you'd like to start training right away, the default settings should work on most single-GPU systems with 12G of VRAM or more.
+Pretraining focuses on building a foundation of language and general knowledge to use as a base for future supervised fine-tuning. The training objective is to predict the next token in a sample of text. It is a self-supervised form of training because the model learns from masked inputs of unsupervised data. For the pretraining corpus we use the Fineweb dataset which consists of 15T high-quality tokens gathered from the worldwide web. In addition, the dataset has been split into 3 subsets (10BT, 100BT, and 350BT versions) for training smaller models.
 
 ```
 python pretrain.py
@@ -54,16 +176,22 @@ python pretrain.py
 
 **Note** that it will take a while to download and pre-process the dataset the first time that the training script is run.
 
-To customize the default "Small" architecture you can adjust the `embedding_dimensions`, `num_attention_heads`, `num_hidden_layers`, and `feed_forward_ratio` arguments of the pretraining script. 
+To customize the default architecture you can adjust the `embedding_dimensions`, attention heads, `num_hidden_layers`, and `feed_forward_ratio` arguments of the pretraining script. 
 
 ```
-python pretrain.py --embedding_dimensions=4096 --num_attention_heads=64 --num_hidden_layers=48 --feed_forward_ratio=4
+python pretrain.py --embedding_dimensions=4096 --num_q_heads=64 --num_kv_heads=16 --num_hidden_layers=48 --feed_forward_ratio=4
 ```
 
 You can also adjust the `batch_size`, `learning_rate`, and `gradient_accumulation_steps` to suite your training setup.
 
 ```
 python pretrain.py --batch_size=32 --learning_rate=0.01 --gradient_accumulation_steps=128
+```
+
+If you are planning a long training run, it is recommended to set a random seed. This will ensure that any random state is preserved if the process gets interrupted.
+
+```
+python pretrain.py --seed=42
 ```
 
 For distributed training, use PyTorch's [torchrun](https://pytorch.org/docs/stable/elastic/run.html) extension to launch a distributed data parallel (DDP) session. The example below is for executing the training script on a single node with 8 individual GPUs.
@@ -83,12 +211,11 @@ torchrun --standalone --nnodes=1 --nproc-per-node=8 pretrain.py --batch_size=16 
 | --dataset_path | "./datasets" | str | The path to the preprocessed dataset files on disk. |
 | --batch_size | 2 | int | The number of samples of size `tokens_per_sample` to pass through the network at a time. |
 | --gradient_accumulation_steps | 128 | int | The number of batches to pass through the network before updating the model weights. |
-| --tokens_per_sample | 2048 | int | The number of tokens to pack into a single training sequence. This is sometimes called the block size or context length. |
+| --tokens_per_sample | 4096 | int | The number of tokens to pack into a single training sequence. This is sometimes called the block size or context length. |
 | --max_steps | 10000 | int | The maximum number of steps to take for pretraining. |
 | --learning_rate | 1e-2 | float | The learning rate of the Adafactor optimizer. |
 | --low_memory_optimizer | False | bool | Should the optimizer reduce its memory consumption in exchange for a slightly slower runtime? |
-| --max_gradient_norm | 1.0 | float | Clip gradients above this threshold norm before stepping. |
-| --eval_interval | 100 | int | Evaluate the model after this many epochs on the testing set. |
+| --max_gradient_norm | 10.0 | float | Clip gradients above this threshold norm before stepping. |
 | --embedding_dimensions | 1024 | int | The dimensionality of the token embeddings. |
 | --num_q_heads | 16 | int | The number of query heads within every attention layer. |
 | --num_kv_heads | 4 | int | The number of key and value heads within every attention layer. |
@@ -97,18 +224,18 @@ torchrun --standalone --nnodes=1 --nproc-per-node=8 pretrain.py --batch_size=16 
 | --dropout | 0.0 | float | The proportion of signals to send to zero during training as regularization. |
 | --activation_checkpointing | False | bool | Should we use activation checkpointing? This will drastically reduce memory utilization during training at the cost of recomputing the forward pass. |
 | --ddp_sharding_level | 2 | int | The level of sharding to use for DDP training. Options are 2 or 3 for partial and full sharding respectively, or 0 for no sharding. |
+| --eval_interval | 100 | int | Evaluate the model after this many epochs on the testing set. |
+| --num_eval_samples | 2048 | int | The number of hold-out samples to use for validation during training. |
 | --checkpoint_interval | 100 | int | Save the model checkpoint to disk every this many epochs. |
 | --checkpoint_path | "./checkpoints/checkpoint.pt" | str | The path to the base checkpoint file on disk. |
 | --resume | False | bool | Should we resume training from the last checkpoint? |
-| --run_dir_path | "./runs/pretrain" | str | The path to the TensorBoard run directory for this training session. |
-| --device | "cuda" | str | The device to run the computation on. |
+| --run_dir_path | "./runs" | str | The path to the TensorBoard run directory for this training session. |
+| --device | "cpu" | str | The device to run the computation on. |
 | --seed | None | int | The seed for the random number generator. |
 
-## Instruction-tuning
+### Fine-tuning
 
-Instruction-tuning is a supervised training technique focused on developing specialized objectives such as chatting, text summarization, chain-of-thought, and prompt rewriting. The overall objective is still to predict the next token but the dataset has been curated for these more specialized objectives. In addition, we introduce three new special tokens (`<|pad|>`, `<|im_start|>` and `<|im_end|>`) that demarcate padding tokens and system, user, and assistant messages for use in the ChatML format. We use the SmolTalk and UltraFeedback datasets by HuggingFace as fine-tuning corpora because they include a broad range of training objectives such as conversation, instruction following, summarization, and human preference alignment.
-
-Unlike pre-training, fine-tuning is not as resource intensive due to training much fewer parameters. The default arguments will work for most GPUs with 12G of VRAM or more.
+Instruction-tuning is a supervised training technique focused on developing specialized objectives such as chatting, text summarization, chain-of-thought, and prompt rewriting. We use the SmolTalk and UltraFeedback datasets by HuggingFace as fine-tuning corpora because they include a broad range of training objectives such as conversation, instruction following, summarization, and human preference alignment.
 
 ```
 python instruction-tune.py
@@ -132,13 +259,15 @@ To adjust the number of trainable LoRA parameters as well as the strength of the
 python instruction-tune.py --rank=4 --alpha=0.8 --dropout=0.1
 ```
 
-### Instruction-tuning Arguments
+### Fine-tuning Arguments
 
 | Argument | Default | Type | Description |
 |---|---|---|---|
-| --base_model_path | "./checkpoints/checkpoint.pt" | string | The path to the base checkpoint on disk. |
-| --dataset_subset | "all,ultra-feedback" | str | A comma-separated list of subsets of the dataset to train on. Options are `all`, `apigen-80k`, `everyday-conversations`, `explore-instruct-rewriting`, `longalign`, `metamathqa-50k`, `numina-cot-100k`, `openhermes-100k`, `self-oss-instruct`, `smol-constraints`, `smol-magpie-ultra`, `smol-rewrite`, `smol-summarize`, `systemchats-30k`, and `ultra-feedback`. |
-| --max_tokens_per_sample | 2048 | int | The maximum number of tokens to pack into a single training sequence. |
+| --base_checkpoint_path | None | string | The path to the base model checkpoint on disk. |
+| --dataset_subset | "all" | str | A comma-separated list of subsets of the dataset to train on. Options are `all`, `apigen-80k`, `everyday-conversations`, `explore-instruct-rewriting`, `longalign`, `metamathqa-50k`, `numina-cot-100k`, `openhermes-100k`, `self-oss-instruct`, `smol-constraints`, `smol-magpie-ultra`, `smol-rewrite`, `smol-summarize`, `systemchats-30k`, and `ultra-feedback`. |
+| --max_tokens_per_sample | 4096 | int | The maximum number of tokens to pack into a single training sequence. |
+| --filter_long_samples | False | bool | Should we filter out samples that are longer than the max_tokens_per_sample? |
+| --num_dataset_processes | 8 | int | The number of processes to use for processing the dataset. |
 | --batch_size | 2 | int | The number of samples to pass through the network at a time. |
 | --gradient_accumulation_steps | 64 | int | The number of batches to pass through the network before updating the weights. |
 | --learning_rate | 1e-2 | float | The learning rate of the Adafactor optimizer. |
@@ -146,10 +275,10 @@ python instruction-tune.py --rank=4 --alpha=0.8 --dropout=0.1
 | --max_gradient_norm | 1.0 | float | Clip gradients above this threshold norm before stepping. |
 | --rank | 8 | int | The rank of the LoRA decomposition matrices. |
 | --alpha | 1.0 | float | The strength of the LoRA signal. |
-| --num_epochs | 3 | int | The number of epochs to train for. |
+| --num_epochs | 2 | int | The number of epochs to train for. |
 | --activation_checkpointing | False | bool | Should we use activation checkpointing? This will reduce drastically memory utilization during training at the cost of needing to recompute the forward pass. |
 | --eval_interval | 1 | int | Evaluate the model after this many epochs on the testing set. |
-| --eval_ratio | 0.1 | float | The proportion of testing samples to validate the model on. |
+| --num_eval_samples | 2048 | int | The number of hold-out samples to use for validation during training. |
 | --checkpoint_interval | 1 | int | Save the model parameters to disk every this many epochs. |
 | --checkpoint_path | "./checkpoints/checkpoint.pt" | str | The path to the model checkpoint. |
 | --resume | False | bool | Should we resume training from the last checkpoint? |
@@ -157,7 +286,7 @@ python instruction-tune.py --rank=4 --alpha=0.8 --dropout=0.1
 | --device | "cuda" | string | The device to run the computation on. |
 | --seed | None | int | The seed for the random number generator. |
 
-## Training Dashboard
+### Training Dashboard
 
 We use [TensorBoard](https://www.tensorflow.org/tensorboard) to capture and display pretraining events such as loss and gradient norm updates. To launch the dashboard server run the following command from the terminal.
 
@@ -166,61 +295,6 @@ tensorboard --logdir=./runs
 ```
 
 Then navigate to the dashboard using your favorite web browser.
-
-## Text Generation
-
-After pre-training, you can generate text from the model by running the `generate.py` script from the commandline. This inference script samples tokens from the model one at a time conditioned on a prompt and any previously generated tokens, together referred to as the context window. In the example below we are choosing to only sample from the `top_k` predicted tokens that have at least `top_p` cumulative probability mass when ordered descending by predicted probability.
-
-```
-python generate.py --temperature=0.4 --top_k=500 --top_p=0.9
-```
-
-### Generation Arguments
-
-| Argument | Default | Type | Description |
-|---|---|---|---|
-| --checkpoint_path | "./checkpoints/checkpoint.pt" | string | The path to the base checkpoint file on disk. |
-| --max_tokens | 2000 | int | The maximum number of tokens that the model should generate per sample. |
-| --colorize_tokens | False | bool | Should we colorize the generated tokens based on the certainty of the model? |
-| --context_length | 2048 | int | The number of tokens to keep within the context window of the current prediction. |
-| --temperature | 1.0 | float | The amount of regularization applied to the candidate token probabilities. |
-| --top_k | 500 | int | Only sample from this many candidate tokens with the highest probabilities. |
-| --top_p | 0.9 | float | Of the `top_k` tokens, drop all but the `top_p` portion of the cumulative probability distribution. |
-| --repeat_penalty | 0.1 | float | The proportion of the logit to penalize for previously generated tokens. |
-| --repeat_window | 50 | int | The number of tokens to keep within the repeat window. |
-| --device | "cuda" | string | The device to run the computation on. |
-| --seed | None | int | The seed for the random number generator. |
-
-## Chatting
-
-Once properly instruction-tuned you can use the chat script to hold back-and-forth conversations with the model. In addition, you can provide a custom system message that serves to focus activations for a particular tone or task. To start chatting, run the chat script like in the example below.
-
-```
-python chat.py
-```
-
-Since the chat script uses the same sampling technique as the `generate.py` script, you can use the same arguments to control the generation process such as `--temperature` and `top_k`.
-
-```
-python chat.py --temperature=0.9 --top_k=200
-```
-
-### Chat Arguments
-
-| Argument | Default | Type | Description |
-|---|---|---|---|
-| --checkpoint_path | "./checkpoints/checkpoint.pt" | string | The path to the base checkpoint file on disk. |
-| --lora_path | None | string | The path to the LoRA checkpoint. |
-| --max_tokens | 2000 | int | The maximum number of tokens that the model should generate per sample. |
-| --colorize_tokens | False | bool | Should we colorize the generated tokens based on the certainty of the model? |
-| --context_length | 2048 | int | The number of tokens to keep within the context window of the current prediction. |
-| --temperature | 0.7 | float | The amount of regularization applied to the candidate token probabilities. |
-| --top_k | 500 | int | Only sample from this many candidate tokens with the highest probabilities. |
-| --top_p | 0.9 | float | Of the `top_k` tokens, drop all but the `top_p` portion of the cumulative probability distribution. |
-| --repeat_penalty | 0.1 | float | The proportion of the logit to penalize for previously generated tokens. |
-| --repeat_window | 50 | int | The number of tokens to keep within the repeat window. |
-| --device | "cuda" | string | The device to run the computation on. |
-| --seed | None | int | The seed for the random number generator. |
 
 ## References:
 >- G. Penedo, et al. The FineWeb Datasets: Decanting the Web for the Finest Text Data at Scale, 38th Conference on Neural Information Processing Systems (NeurIPS 2024) Track on Datasets and Benchmarks.

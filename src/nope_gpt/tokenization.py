@@ -199,6 +199,10 @@ class ChatTokenizer(ModelHubMixin):
         self.tokenizer = tokenizer
 
     @property
+    def name(self) -> str:
+        return self.tokenizer.name
+
+    @property
     def vocabulary_size(self) -> int:
         return self.tokenizer.vocabulary_size
 

@@ -33,9 +33,7 @@ def main():
     csv_list = partial(str.split, sep=",")
 
     parser.add_argument("--base_checkpoint_path", required=True, type=str)
-    parser.add_argument(
-        "--dataset_subsets", default=["all", "ultra-feedback"], type=csv_list
-    )
+    parser.add_argument("--dataset_subsets", default=["all"], type=csv_list)
     parser.add_argument("--max_tokens_per_sample", default=4096, type=int)
     parser.add_argument("--filter_long_samples", action="store_true")
     parser.add_argument("--num_dataset_processes", default=8, type=int)
