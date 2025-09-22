@@ -36,7 +36,7 @@ def main():
     parser.add_argument("--repeat_penalty", default=0.1, type=float)
     parser.add_argument("--repeat_window", default=50, type=int)
     parser.add_argument("--max_message_history", default=4, type=int)
-    parser.add_argument("--device", default="cuda", type=str)
+    parser.add_argument("--device", default="cpu", type=str)
     parser.add_argument("--seed", default=None, type=int)
 
     args = parser.parse_args()

@@ -24,7 +24,7 @@ def main():
     parser.add_argument("--num_candidates", default=3, type=int)
     parser.add_argument("--beam_width", default=16, type=int)
     parser.add_argument("--length_penalty", default=1.0, type=float)
-    parser.add_argument("--device", default="cuda", type=str)
+    parser.add_argument("--device", default="cpu", type=str)
     parser.add_argument("--seed", default=None, type=int)
 
     args = parser.parse_args()

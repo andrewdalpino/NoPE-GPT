@@ -238,7 +238,7 @@ torchrun --standalone --nnodes=1 --nproc-per-node=8 pretrain.py --batch_size=16 
 | --checkpoint_path | "./checkpoints/checkpoint.pt" | str | The path to the base checkpoint file on disk. |
 | --resume | False | bool | Should we resume training from the last checkpoint? |
 | --run_dir_path | "./runs" | str | The path to the TensorBoard run directory for this training session. |
-| --device | "cpu" | str | The device to run the computation on. |
+| --device | "cpu" | str | The device to run the training on ex `cuda`, `cuda:0`, `mps`, `cpu`. |
 | --seed | None | int | The seed for the random number generator. |
 
 ### Fine-tuning
@@ -291,7 +291,7 @@ python instruction-tune.py --rank=4 --alpha=0.8 --dropout=0.1
 | --checkpoint_path | "./checkpoints/checkpoint.pt" | str | The path to the model checkpoint. |
 | --resume | False | bool | Should we resume training from the last checkpoint? |
 | --run_dir_path | "./runs" | str | The path to the TensorBoard run directory for this training session. |
-| --device | "cuda" | string | The device to run the computation on. |
+| --device | "cpu" | str | The device to run the training on ex `cuda`, `cuda:0`, `mps`, `cpu`. |
 | --seed | None | int | The seed for the random number generator. |
 
 ### Training Dashboard

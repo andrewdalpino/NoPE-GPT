@@ -83,7 +83,7 @@ def main():
     )
     parser.add_argument("--resume", action="store_true")
     parser.add_argument("--run_dir_path", default="./runs", type=str)
-    parser.add_argument("--device", default="cuda", type=str)
+    parser.add_argument("--device", default="cpu", type=str)
     parser.add_argument("--seed", default=None, type=int)
 
     args = parser.parse_args()
