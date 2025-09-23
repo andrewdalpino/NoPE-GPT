@@ -6,16 +6,16 @@ NoPE GPT is a generative pretrained Transformer-style (GPT) language model with 
 
 - **No positional embeddings (NoPE)**: NoPE GPT aims to be a more parsimonious model by completely removing positional embeddings from the architecture allowing the context length to vary without complex model surgery. Despite having no positional embeddings, NoPE GPT performs better at context length generalization than the best relative embeddings (ALiBi, RoPE, T5) offering good performance even when operating within 2X the trained context window.
 
-- **Fast and memory-efficient**: NoPE GPT employs a number of training and inference-time optimizations such as KV-caching, Group Query Attention, activation checkpointing, and Fully-sharded Data Parallel pretraining. As such, you can train and infer using relatively modest hardware.
+- **Fast and memory-efficient**: NoPE GPT employs a number of training and inference-time optimizations such as Group Query Attention, KV-caching, quantization-aware fine-tuning (QAT), activation checkpointing, and fully-sharded data parallel (FSDP) pretraining. As such, you can train and infer on relatively modest hardware.
 
 - **Fully Open-source**: Unlike closed-source LLMs, NoPE GPT provides both the model weights *and* the source code to train, fine-tune, export, and generate text from the model using your own hardware.
 
 ## Pretrained Models
 
-| Name | Vocab. Size | Embedding Dim. | Query Heads | Key/Value Heads | Hidden Ratio | Layers | Parameters |
-|---|---|---|---|---|---|---|---|
-| [NoPE-GPT-400M-Chat](https://huggingface.co/andrewdalpino/NoPE-GPT-400M-Chat) | 50,261 | 1280 | 20 | 5 | 4X | 20 | 408M |
-| [NoPE-GPT-400M-Base](https://huggingface.co/andrewdalpino/NoPE-GPT-400M-Base) | 50,257 | 1280 | 20 | 5 | 4X | 20 | 408M |
+| Name | Context Length | Vocab. Size | Embedding Dim. | Query Heads | Key/Value Heads | Layers |
+|---|---|---|---|---|---|---|
+| [NoPE-GPT-400M-Chat](https://huggingface.co/andrewdalpino/NoPE-GPT-400M-Chat) | 8192 | 50,261 | 1280 | 20 | 5 | 20 |
+| [NoPE-GPT-400M-Base](https://huggingface.co/andrewdalpino/NoPE-GPT-400M-Base) | 8192 | 50,257 | 1280 | 20 | 5  | 20 |
 
 ## Installation
 
@@ -159,7 +159,7 @@ In addition to the inference code, we also provide training and fine-tuning code
 We'll need the code from the project repository to train and/or fine-tune the model.
 
 ```
-git clone https://andrewdalpino/NoPE-GPT
+git clone https://github.com/andrewdalpino/NoPE-GPT
 ```
 
 ### Install Project Dependencies
@@ -246,25 +246,37 @@ torchrun --standalone --nnodes=1 --nproc-per-node=8 pretrain.py --batch_size=16 
 Instruction-tuning is a supervised training technique focused on developing specialized objectives such as chatting, text summarization, chain-of-thought, and prompt rewriting. We use the SmolTalk and UltraFeedback datasets by HuggingFace as fine-tuning corpora because they include a broad range of training objectives such as conversation, instruction following, summarization, and human preference alignment.
 
 ```
-python instruction-tune.py
+python fine-tune.py
 ```
 
 To pick which dataset subsets to train on you can specify them in a comma-separated list like in the example below.
 
 ```
-python instruction-tune.py --dataset_subsets=smol-magpie-ultra,smol-summarize,ultra-feedback
+python fine-tune.py --dataset_subsets=smol-magpie-ultra,smol-summarize,ultra-feedback
 ```
 
 You can also adjust the `batch_size`, `learning_rate`, and `gradient_accumulation_steps` just like we did with pre-training.
 
 ```
-python instruction-tune.py --batch_size=32 --learning_rate=0.01 --gradient_accumulation_steps=32
+python fine-tune.py --batch_size=32 --learning_rate=0.01 --gradient_accumulation_steps=32
 ```
 
-To adjust the number of trainable LoRA parameters as well as the strength of the LoRA and Dropout signals you can change the `--rank`, `--alpha`, and `--dropout` arguments respectively.
+To adjust the number of trainable LoRA parameters as well as the strength of the LoRA and Dropout signals you can change the `--rank` and `--alpha` arguments respectively.
 
 ```
-python instruction-tune.py --rank=4 --alpha=0.8 --dropout=0.1
+python fine-tune.py --rank=4 --alpha=2.0
+```
+
+If you want to do quantization-aware training (QAT) to improve the accuracy of post-training quantization, you can temporarily replace the model weights with fake quantized and then fine-tune as normal. To adjust the quant group size set the `quant_group_size` argument like in the example below.
+
+```
+python fine-tune.py --quantization_aware_training --quant_group_size=128
+```
+
+In memory constrained environments, you can enable activation checkpointing to trade off compute for memory efficiency by recomputing the activations of each decoder block during backpropagation.
+
+```
+python fine-tune.py --activation_checkpointing
 ```
 
 ### Fine-tuning Arguments
@@ -278,12 +290,13 @@ python instruction-tune.py --rank=4 --alpha=0.8 --dropout=0.1
 | --num_dataset_processes | 8 | int | The number of processes to use for processing the dataset. |
 | --batch_size | 2 | int | The number of samples to pass through the network at a time. |
 | --gradient_accumulation_steps | 64 | int | The number of batches to pass through the network before updating the weights. |
+| --num_epochs | 2 | int | The number of epochs to train for. |
 | --learning_rate | 1e-2 | float | The learning rate of the Adafactor optimizer. |
 | --low_memory_optimizer | False | bool | Should the optimizer reduce its memory consumption in exchange for a slightly slower runtime? |
 | --max_gradient_norm | 1.0 | float | Clip gradients above this threshold norm before stepping. |
 | --rank | 8 | int | The rank of the LoRA decomposition matrices. |
 | --alpha | 1.0 | float | The strength of the LoRA signal. |
-| --num_epochs | 2 | int | The number of epochs to train for. |
+| --quantization_aware_training | False | bool | Should replace the model weights with fake quantized tensors? |
 | --activation_checkpointing | False | bool | Should we use activation checkpointing? This will reduce drastically memory utilization during training at the cost of needing to recompute the forward pass. |
 | --eval_interval | 1 | int | Evaluate the model after this many epochs on the testing set. |
 | --num_eval_samples | 2048 | int | The number of hold-out samples to use for validation during training. |

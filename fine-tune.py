@@ -45,6 +45,8 @@ def main():
     parser.add_argument("--num_epochs", default=2, type=int)
     parser.add_argument("--lora_rank", default=8, type=int)
     parser.add_argument("--lora_alpha", default=1.0, type=float)
+    parser.add_argument("--quantization_aware_training", action="store_trues")
+    parser.add_argument("--quant_group_size", default=128, type=int)
     parser.add_argument("--activation_checkpointing", action="store_true")
     parser.add_argument("--eval_interval", default=1, type=int)
     parser.add_argument("--num_eval_samples", default=2048, type=int)
@@ -176,8 +178,6 @@ def main():
 
     model.load_state_dict(state_dict)
 
-    print("Base checkpoint loaded")
-
     model.freeze_model_parameters()
 
     model.unfreeze_token_embeddings()
@@ -189,11 +189,12 @@ def main():
         "alpha": args.lora_alpha,
     }
 
-    model.add_lora_parameters(**lora_args)
-
-    print("Added LoRA adapters")
+    model.add_lora_adapters(**lora_args)
 
     print(f"Model has {model.num_trainable_params:,} trainable parameters")
+
+    if args.quantization_aware_training:
+        model.add_fake_quantized_tensors(args.quant_group_size)
 
     if args.activation_checkpointing:
         model.decoder.enable_activation_checkpointing()
@@ -225,8 +226,6 @@ def main():
     loss_function = CrossEntropyLoss(ignore_index=IGNORE_INDEX)
 
     perplexity_metric = Perplexity(ignore_index=IGNORE_INDEX).to(args.device)
-
-    print("Instruction-tuning ...")
 
     for epoch in range(starting_epoch, args.num_epochs + 1):
         total_cross_entropy, total_gradient_norm = 0.0, 0.0

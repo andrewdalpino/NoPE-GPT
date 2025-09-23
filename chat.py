@@ -58,11 +58,11 @@ def main():
 
     model.resize_token_embeddings(tokenizer.vocabulary_size)
 
-    model.add_lora_parameters(**checkpoint["lora_args"])
+    model.add_lora_adapters(**checkpoint["lora_args"])
 
     model.load_state_dict(checkpoint["model"])
 
-    model.merge_lora_parameters()
+    model.merge_lora_adapters()
 
     model.to(args.device)
 

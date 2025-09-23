@@ -22,6 +22,14 @@ from torch.nn.functional import scaled_dot_product_attention, softmax, log_softm
 from torch.nn.utils.parametrize import register_parametrization, remove_parametrizations
 from torch.utils.checkpoint import checkpoint as torch_checkpoint
 
+from torchao.quantization import Int8WeightOnlyConfig, quantize_
+
+from torchao.quantization.qat import (
+    FakeQuantizeConfig,
+    IntXQuantizationAwareTrainingConfig,
+    FromIntXQuantizationAwareTrainingConfig,
+)
+
 from huggingface_hub import PyTorchModelHubMixin
 
 from src.nope_gpt.caching import KVCache, DynamicKVBlock
@@ -65,6 +73,8 @@ class NoPEGPT(Module, PyTorchModelHubMixin):
 
         token_classifier.linear.weight = token_embeddings.weight  # Tie weights
 
+        self.vocabulary_size = vocabulary_size
+        self.embedding_dimensions = embedding_dimensions
         self.token_embeddings = token_embeddings
         self.decoder = decoder
         self.token_classifier = token_classifier
@@ -88,13 +98,13 @@ class NoPEGPT(Module, PyTorchModelHubMixin):
     def resize_token_embeddings(self, new_vocabulary_size: int) -> None:
         """Resize the token embeddings to a new vocabulary size."""
 
-        vocabulary_size = self.token_embeddings.num_embeddings
-        embedding_dimensions = self.token_embeddings.embedding_dim
         device = self.token_embeddings.weight.device
 
-        new_embeddings = Embedding(new_vocabulary_size, embedding_dimensions).to(device)
+        new_embeddings = Embedding(new_vocabulary_size, self.embedding_dimensions).to(
+            device
+        )
 
-        num_tokens_to_copy = min(new_vocabulary_size, vocabulary_size)
+        num_tokens_to_copy = min(new_vocabulary_size, self.vocabulary_size)
 
         new_embeddings.weight[:num_tokens_to_copy, :] = self.token_embeddings.weight[
             :num_tokens_to_copy, :
@@ -102,8 +112,8 @@ class NoPEGPT(Module, PyTorchModelHubMixin):
 
         # Initialize new embeddings with a kaiming normal distribution.
         for i in range(num_tokens_to_copy, new_vocabulary_size):
-            tensor = torch.randn(embedding_dimensions)
-            tensor /= sqrt(embedding_dimensions)
+            tensor = torch.randn(self.embedding_dimensions)
+            tensor /= sqrt(self.embedding_dimensions)
 
             new_embeddings.weight[i] = tensor
 
@@ -113,23 +123,57 @@ class NoPEGPT(Module, PyTorchModelHubMixin):
         # Retie weights
         self.token_classifier.linear.weight = self.token_embeddings.weight
 
-    def add_lora_parameters(self, rank: int, alpha: float) -> None:
+        self.vocabulary_size = new_vocabulary_size
+
+    def add_lora_adapters(self, rank: int, alpha: float) -> None:
         """Reparameterize the weights of the model using LoRA adapters."""
 
         for module in self.decoder.layers:
             module.add_lora_adapters(rank, alpha)
 
-    def merge_lora_parameters(self) -> None:
-        """Merge the LoRA parameters with the original parameters."""
+    def merge_lora_adapters(self) -> None:
+        """Merge the LoRA adapters with the original parameters."""
 
         for module in self.modules():
             if not hasattr(module, "parametrizations"):
                 continue
 
-            lora_params = [name for name in module.parametrizations.keys()]
+            lora_params = []
+
+            for name, parameterizations in module.parametrizations.items():
+                for parametrization in parameterizations:
+                    if isinstance(parametrization, LoRA):
+                        lora_params.append(name)
 
             for name in lora_params:
                 remove_parametrizations(module, name)
+
+    def add_fake_quantized_tensors(self, group_size: int) -> None:
+        """Prepare the model for quantization-aware training."""
+
+        assert group_size % self.embedding_dimensions == 0, "Invalid quant group size."
+
+        weight_config = FakeQuantizeConfig(torch.int8, group_size=group_size)
+
+        config = IntXQuantizationAwareTrainingConfig(weight_config=weight_config)
+
+        quantize_(self, config)
+
+    def remove_fake_quantized_tensors(self) -> None:
+        """Convert fake quantized tensors back to regular tensors."""
+
+        config = FromIntXQuantizationAwareTrainingConfig()
+
+        quantize_(self, config)
+
+    def quantize_weights(self, group_size: int) -> None:
+        """Quantize the weights of the model."""
+
+        assert group_size % self.embedding_dimensions == 0, "Invalid quant group size."
+
+        config = Int8WeightOnlyConfig(group_size=group_size)
+
+        quantize_(self, config)
 
     def forward(self, x: Tensor) -> Tensor:
         """A forward pass optimized for batch training."""
@@ -469,7 +513,6 @@ class SelfAttention(Module):
 
         is_gqa: bool = num_q_heads > num_kv_heads
 
-        self.embedding_dimensions = embedding_dimensions
         self.num_q_heads = num_q_heads
         self.num_kv_heads = num_kv_heads
         self.head_dimensions = head_dimensions
