@@ -8,8 +8,6 @@ from src.nope_gpt.tokenization import BaseTokenizer, ChatTokenizer
 
 
 class MockEncoding:
-    """Mock for tiktoken.Encoding class."""
-
     def __init__(
         self,
         name="mock_encoding",
@@ -26,12 +24,10 @@ class MockEncoding:
         self.n_vocab = 1000
 
     def encode_ordinary(self, text):
-        """Mock encode_ordinary method."""
         # For testing, return simple predictable tokens
         return [ord(c) % 1000 for c in text]
 
     def encode(self, text, allowed_special=None):
-        """Mock encode method."""
         # For testing, return simple predictable tokens
         if allowed_special == "all":
             # Simulate a special token at the beginning
@@ -39,19 +35,15 @@ class MockEncoding:
         return [ord(c) % 1000 for c in text]
 
     def decode(self, tokens):
-        """Mock decode method."""
         # Simple decoding for testing
         return "".join([chr(t) for t in tokens])
 
     def decode_single_token_bytes(self, token):
-        """Mock decode_single_token_bytes method."""
         # Return bytes version of the token for testing
         return str(token).encode("utf-8")
 
 
 class TestBaseTokenizer(unittest.TestCase):
-    """Test cases for the BaseTokenizer class."""
-
     def setUp(self):
         """Set up test parameters."""
         self.mock_encoding = MockEncoding()
@@ -59,7 +51,6 @@ class TestBaseTokenizer(unittest.TestCase):
 
     @patch("src.nope_gpt.tokenization.get_encoding")
     def test_from_tiktoken(self, mock_get_encoding):
-        """Test from_tiktoken class method."""
         mock_get_encoding.return_value = self.mock_encoding
 
         tokenizer = BaseTokenizer.from_tiktoken("test_encoding")
@@ -72,7 +63,6 @@ class TestBaseTokenizer(unittest.TestCase):
     @patch("src.nope_gpt.tokenization.load_json")
     @patch("builtins.open", new_callable=mock_open)
     def test_from_pretrained(self, mock_file, mock_load_json, mock_hf_hub_download):
-        """Test _from_pretrained class method."""
         mock_hf_hub_download.return_value = "fake/path/tokenizer.json"
         mock_load_json.return_value = {"name": "test_encoding"}
 
@@ -99,7 +89,6 @@ class TestBaseTokenizer(unittest.TestCase):
             self.assertEqual(tokenizer, self.tokenizer)
 
     def test_properties(self):
-        """Test BaseTokenizer properties."""
         self.assertEqual(self.tokenizer.name, "mock_encoding")
         self.assertEqual(self.tokenizer.vocabulary_size, 1000)
         self.assertEqual(self.tokenizer.pad_token, 1)
@@ -108,7 +97,6 @@ class TestBaseTokenizer(unittest.TestCase):
     @patch("src.nope_gpt.tokenization.save_json")
     @patch("builtins.open", new_callable=mock_open)
     def test_save_pretrained(self, mock_file, mock_save_json):
-        """Test _save_pretrained method."""
         save_dir = Path("/fake/save/dir")
 
         self.tokenizer._save_pretrained(save_dir)
@@ -119,7 +107,6 @@ class TestBaseTokenizer(unittest.TestCase):
 
     @patch("src.nope_gpt.tokenization.Encoding")
     def test_add_special_tokens(self, mock_encoding_class):
-        """Test add_special_tokens method."""
         # Create a new mock encoding that will be returned by the Encoding constructor
         new_mock_encoding = MockEncoding(
             name="mock_encoding",
@@ -140,21 +127,18 @@ class TestBaseTokenizer(unittest.TestCase):
         self.assertEqual(self.tokenizer.tokenizer, new_mock_encoding)
 
     def test_tokenize(self):
-        """Test tokenize method."""
         tokens = self.tokenizer.tokenize("test")
         # Our mock encoding returns ord(c) % 1000 for each character
         expected = [116, 101, 115, 116]  # ASCII values for 'test'
         self.assertEqual(tokens, expected)
 
     def test_tokenize_with_special(self):
-        """Test tokenize_with_special method."""
         tokens = self.tokenizer.tokenize_with_special("test")
         # Our mock adds a 500 at the beginning for special tokens
         expected = [500, 116, 101, 115, 116]
         self.assertEqual(tokens, expected)
 
     def test_tokenize_single(self):
-        """Test tokenize_single method."""
         # Mock the tokenize_with_special to return a single token
         with patch.object(self.tokenizer, "tokenize_with_special", return_value=[42]):
             token = self.tokenizer.tokenize_single("a")
@@ -166,7 +150,6 @@ class TestBaseTokenizer(unittest.TestCase):
                 self.tokenizer.tokenize_single("ab")
 
     def test_decode_tokens(self):
-        """Test decode_tokens method."""
         # Mock decode to return predictable output
         self.mock_encoding.decode = lambda tokens: "".join([chr(t) for t in tokens])
 
@@ -174,7 +157,6 @@ class TestBaseTokenizer(unittest.TestCase):
         self.assertEqual(text, "abc")
 
     def test_decode_single_token(self):
-        """Test decode_single_token method."""
         text = self.tokenizer.decode_single_token(42)
         self.assertEqual(text, "42")
 
@@ -183,7 +165,6 @@ class TestChatTokenizer(unittest.TestCase):
     """Test cases for the ChatTokenizer class."""
 
     def setUp(self):
-        """Set up test parameters."""
         # Create a BaseTokenizer with a mock encoding
         self.mock_encoding = MockEncoding()
         self.base_tokenizer = BaseTokenizer(self.mock_encoding)
@@ -203,7 +184,7 @@ class TestChatTokenizer(unittest.TestCase):
     @patch("src.nope_gpt.tokenization.load_json")
     @patch("builtins.open", new_callable=mock_open)
     def test_from_pretrained(self, mock_file, mock_load_json, mock_hf_hub_download):
-        """Test _from_pretrained class method."""
+
         mock_hf_hub_download.return_value = "fake/path/tokenizer.json"
         mock_load_json.return_value = {"name": "test_encoding"}
 
@@ -232,7 +213,6 @@ class TestChatTokenizer(unittest.TestCase):
             mock_init.assert_called_once()
 
     def test_init(self):
-        """Test ChatTokenizer initialization."""
         # Check that add_special_tokens was called with the correct tokens
         with (
             patch.object(self.base_tokenizer, "add_special_tokens") as mock_add_special,
@@ -253,7 +233,6 @@ class TestChatTokenizer(unittest.TestCase):
             mock_add_special.assert_called_once_with(expected_tokens)
 
     def test_properties(self):
-        """Test ChatTokenizer properties."""
         self.assertEqual(self.chat_tokenizer.name, "mock_encoding")
         self.assertEqual(self.chat_tokenizer.vocabulary_size, 1000)
         self.assertEqual(self.chat_tokenizer.pad_token, 1)
@@ -274,7 +253,6 @@ class TestChatTokenizer(unittest.TestCase):
         mock_save_json.assert_called_once_with({"name": "mock_encoding"}, mock_file())
 
     def test_tokenize_message(self):
-        """Test tokenize_message method."""
         # Patch tokenize_with_special to return predictable tokens
         with patch.object(
             self.base_tokenizer, "tokenize_with_special", return_value=[101, 102, 103]
@@ -294,7 +272,6 @@ class TestChatTokenizer(unittest.TestCase):
             )
 
     def test_tokenize_prompt(self):
-        """Test tokenize_prompt method."""
         # Create a list of messages
         messages = [
             {"role": "user", "content": "Hello"},
@@ -327,7 +304,6 @@ class TestChatTokenizer(unittest.TestCase):
             mock_tokenize_message.assert_any_call(messages[1])
 
     def test_decode_methods(self):
-        """Test decode_tokens and decode_single_token methods."""
         # These methods just delegate to the base tokenizer, so check that they do
         with (
             patch.object(self.base_tokenizer, "decode_tokens") as mock_decode_tokens,

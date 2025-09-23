@@ -5,10 +5,7 @@ from src.nope_gpt.memory import BufferWindowMemory
 
 
 class TestBufferWindowMemory(unittest.TestCase):
-    """Test cases for the BufferWindowMemory class."""
-
     def test_init(self):
-        """Test initialization of BufferWindowMemory."""
         # Test with valid max_messages
         memory = BufferWindowMemory(max_messages=5)
         self.assertEqual(memory.max_messages, 5)
@@ -23,7 +20,6 @@ class TestBufferWindowMemory(unittest.TestCase):
             BufferWindowMemory(max_messages=-1)
 
     def test_add_message(self):
-        """Test add_message method."""
         memory = BufferWindowMemory(max_messages=3)
 
         # Add a single message
@@ -44,7 +40,6 @@ class TestBufferWindowMemory(unittest.TestCase):
         self.assertEqual(list(memory.messages), [message1, message2, message3])
 
     def test_add_message_with_overflow(self):
-        """Test add_message method when exceeding max_messages limit."""
         memory = BufferWindowMemory(max_messages=2)
 
         message1 = {"role": "user", "content": "Message 1"}
@@ -68,7 +63,6 @@ class TestBufferWindowMemory(unittest.TestCase):
         self.assertEqual(list(memory.messages), [message3, message4])
 
     def test_get_history(self):
-        """Test get_history method."""
         memory = BufferWindowMemory(max_messages=3)
 
         # Test with empty history
@@ -95,7 +89,6 @@ class TestBufferWindowMemory(unittest.TestCase):
         self.assertEqual(len(memory.messages), 2)  # Should still be 2
 
     def test_add_complex_messages(self):
-        """Test add_message with complex message structures."""
         memory = BufferWindowMemory(max_messages=5)
 
         # Test with messages containing nested structures

@@ -18,10 +18,7 @@ from src.nope_gpt.search import Candidate
 
 
 class TestLoRA(unittest.TestCase):
-    """Test cases for the LoRA class."""
-
     def test_init(self):
-        """Test initialization of LoRA."""
         in_features = 10
         out_features = 20
         rank = 4
@@ -36,7 +33,6 @@ class TestLoRA(unittest.TestCase):
         self.assertTrue(torch.all(lora.lora_b == 0))
 
     def test_from_linear(self):
-        """Test from_linear class method."""
         in_features = 10
         out_features = 20
         rank = 4
@@ -51,7 +47,6 @@ class TestLoRA(unittest.TestCase):
         self.assertEqual(lora.lora_b.shape, (out_features, rank))
 
     def test_forward(self):
-        """Test forward method."""
         in_features = 10
         out_features = 20
         rank = 4
@@ -79,10 +74,7 @@ class TestLoRA(unittest.TestCase):
 
 
 class TestTokenClassifier(unittest.TestCase):
-    """Test cases for the TokenClassifier class."""
-
     def test_init(self):
-        """Test initialization of TokenClassifier."""
         embedding_dimensions = 32
         vocabulary_size = 100
 
@@ -96,7 +88,6 @@ class TestTokenClassifier(unittest.TestCase):
         self.assertEqual(classifier.linear.out_features, vocabulary_size)
 
     def test_forward(self):
-        """Test forward method."""
         batch_size = 2
         seq_len = 5
         embedding_dimensions = 32
@@ -115,10 +106,7 @@ class TestTokenClassifier(unittest.TestCase):
 
 
 class TestInvertedBottleneck(unittest.TestCase):
-    """Test cases for the InvertedBottleneck class."""
-
     def test_init(self):
-        """Test initialization of InvertedBottleneck."""
         embedding_dimensions = 32
         hidden_ratio = 2
         dropout = 0.1
@@ -142,12 +130,10 @@ class TestInvertedBottleneck(unittest.TestCase):
         self.assertEqual(bottleneck.dropout.p, dropout)
 
     def test_init_with_invalid_hidden_ratio(self):
-        """Test initialization with invalid hidden_ratio."""
         with self.assertRaises(AssertionError):
             InvertedBottleneck(32, 3, 0.1)  # hidden_ratio must be 1, 2, or 4
 
     def test_forward(self):
-        """Test forward method."""
         batch_size = 2
         seq_len = 5
         embedding_dimensions = 32
@@ -166,7 +152,6 @@ class TestInvertedBottleneck(unittest.TestCase):
         self.assertEqual(output.shape, (batch_size, seq_len, embedding_dimensions))
 
     def test_predict(self):
-        """Test predict method."""
         batch_size = 2
         seq_len = 5
         embedding_dimensions = 32
@@ -186,10 +171,7 @@ class TestInvertedBottleneck(unittest.TestCase):
 
 
 class TestSelfAttention(unittest.TestCase):
-    """Test cases for the SelfAttention class."""
-
     def test_init(self):
-        """Test initialization of SelfAttention."""
         embedding_dimensions = 64
         num_q_heads = 4
         num_kv_heads = 2
@@ -225,7 +207,6 @@ class TestSelfAttention(unittest.TestCase):
         self.assertEqual(attention.v_proj.out_features, kv_dimensions)
 
     def test_init_invalid_params(self):
-        """Test initialization with invalid parameters."""
         # Test num_q_heads < num_kv_heads (not allowed)
         with self.assertRaises(AssertionError):
             SelfAttention(64, 2, 4, 0.1)
@@ -236,7 +217,6 @@ class TestSelfAttention(unittest.TestCase):
 
     @patch("src.nope_gpt.model.scaled_dot_product_attention")
     def test_forward(self, mock_attention):
-        """Test forward method with mocked attention."""
         batch_size = 2
         seq_len = 5
         embedding_dimensions = 64
@@ -267,7 +247,6 @@ class TestSelfAttention(unittest.TestCase):
 
     @patch("src.nope_gpt.model.scaled_dot_product_attention")
     def test_predict(self, mock_attention):
-        """Test predict method with mocked attention."""
         batch_size = 2
         seq_len = 1  # Autoregressive phase has seq_len=1
         embedding_dimensions = 64
@@ -313,10 +292,7 @@ class TestSelfAttention(unittest.TestCase):
 
 
 class TestDecoderBlock(unittest.TestCase):
-    """Test cases for the DecoderBlock class."""
-
     def test_init(self):
-        """Test initialization of DecoderBlock."""
         embedding_dimensions = 64
         num_q_heads = 4
         num_kv_heads = 2
@@ -333,7 +309,6 @@ class TestDecoderBlock(unittest.TestCase):
         self.assertIsInstance(block.norm2, nn.RMSNorm)
 
     def test_forward(self):
-        """Test forward method."""
         batch_size = 2
         seq_len = 5
         embedding_dimensions = 64
@@ -356,7 +331,6 @@ class TestDecoderBlock(unittest.TestCase):
         self.assertEqual(output.shape, (batch_size, seq_len, embedding_dimensions))
 
     def test_predict(self):
-        """Test predict method."""
         batch_size = 2
         seq_len = 1
         embedding_dimensions = 64
@@ -403,10 +377,7 @@ class TestDecoderBlock(unittest.TestCase):
 
 
 class TestDecoder(unittest.TestCase):
-    """Test cases for the Decoder class."""
-
     def test_init(self):
-        """Test initialization of Decoder."""
         embedding_dimensions = 64
         num_q_heads = 4
         num_kv_heads = 2
@@ -429,12 +400,10 @@ class TestDecoder(unittest.TestCase):
             self.assertIsInstance(layer, DecoderBlock)
 
     def test_init_invalid_num_layers(self):
-        """Test initialization with invalid num_layers."""
         with self.assertRaises(AssertionError):
             Decoder(64, 4, 2, 0, 2, 0.1)  # num_layers must be > 0
 
     def test_forward(self):
-        """Test forward method."""
         batch_size = 2
         seq_len = 5
         embedding_dimensions = 64
@@ -463,7 +432,6 @@ class TestDecoder(unittest.TestCase):
         self.assertEqual(output.shape, (batch_size, seq_len, embedding_dimensions))
 
     def test_predict(self):
-        """Test predict method."""
         batch_size = 2
         seq_len = 1
         embedding_dimensions = 64
@@ -523,10 +491,7 @@ class TestDecoder(unittest.TestCase):
 
 
 class TestNoPEGPT(unittest.TestCase):
-    """Test cases for the NoPEGPT class."""
-
     def test_init(self):
-        """Test initialization of NoPEGPT."""
         vocabulary_size = 100
         embedding_dimensions = 64
         num_q_heads = 4
@@ -560,7 +525,6 @@ class TestNoPEGPT(unittest.TestCase):
         )
 
     def test_init_invalid_params(self):
-        """Test initialization with invalid parameters."""
         # Test vocabulary_size <= 0
         with self.assertRaises(AssertionError):
             NoPEGPT(0, 64, 4, 2, 2, 2, 0.1)
@@ -574,7 +538,6 @@ class TestNoPEGPT(unittest.TestCase):
             NoPEGPT(100, 64, 4, 2, 0, 2, 0.1)
 
     def test_num_trainable_params(self):
-        """Test num_trainable_params property."""
         vocabulary_size = 100
         embedding_dimensions = 64
         num_q_heads = 4
@@ -599,7 +562,6 @@ class TestNoPEGPT(unittest.TestCase):
         self.assertEqual(model.num_trainable_params, num_params)
 
     def test_freeze_model_parameters(self):
-        """Test freeze_model_parameters method."""
         vocabulary_size = 100
         embedding_dimensions = 64
         num_q_heads = 4
@@ -630,7 +592,6 @@ class TestNoPEGPT(unittest.TestCase):
             self.assertFalse(param.requires_grad)
 
     def test_unfreeze_token_embeddings(self):
-        """Test unfreeze_token_embeddings method."""
         vocabulary_size = 100
         embedding_dimensions = 64
         num_q_heads = 4
@@ -668,7 +629,6 @@ class TestNoPEGPT(unittest.TestCase):
                 self.assertFalse(param.requires_grad)
 
     def test_forward(self):
-        """Test forward method."""
         batch_size = 2
         seq_len = 5
         vocabulary_size = 100
@@ -700,7 +660,6 @@ class TestNoPEGPT(unittest.TestCase):
 
     @patch("src.nope_gpt.model.KVCache")
     def test_predict(self, mock_kv_cache_class):
-        """Test predict method."""
         batch_size = 1
         seq_len = 1
         vocabulary_size = 100

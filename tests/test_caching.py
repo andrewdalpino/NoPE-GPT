@@ -8,16 +8,12 @@ from src.nope_gpt.caching import KVCache, DynamicKVBlock
 
 
 class MockDecoderLayer(Module):
-    """Mock decoder layer for testing."""
-
     def __init__(self, embedding_dimensions, num_q_heads, num_kv_heads):
         super().__init__()
         self.stage1 = MockStage(embedding_dimensions, num_q_heads, num_kv_heads)
 
 
 class MockStage(Module):
-    """Mock stage for testing."""
-
     def __init__(self, embedding_dimensions, num_q_heads, num_kv_heads):
         super().__init__()
         self.embedding_dimensions = embedding_dimensions
@@ -26,8 +22,6 @@ class MockStage(Module):
 
 
 class MockDecoder(Module):
-    """Mock decoder for testing KVCache."""
-
     def __init__(self, num_layers, embedding_dimensions, num_q_heads, num_kv_heads):
         super().__init__()
         self.layers = ModuleList(
@@ -39,8 +33,6 @@ class MockDecoder(Module):
 
 
 class TestDynamicKVBlock(unittest.TestCase):
-    """Test cases for the DynamicKVBlock class."""
-
     def setUp(self):
         """Set up test parameters."""
         self.batch_size = 2
@@ -59,7 +51,6 @@ class TestDynamicKVBlock(unittest.TestCase):
         )
 
     def test_init(self):
-        """Test initialization of DynamicKVBlock."""
         self.assertEqual(self.kv_block.k_cache.size(0), self.batch_size)
         self.assertEqual(self.kv_block.k_cache.size(1), self.num_kv_heads)
         self.assertEqual(self.kv_block.k_cache.size(2), 0)  # Empty cache initially
@@ -73,7 +64,6 @@ class TestDynamicKVBlock(unittest.TestCase):
         self.assertEqual(self.kv_block.context_length, self.context_length)
 
     def test_init_invalid_parameters(self):
-        """Test initialization with invalid parameters."""
         with self.assertRaises(AssertionError):
             DynamicKVBlock(
                 0,
@@ -121,7 +111,6 @@ class TestDynamicKVBlock(unittest.TestCase):
             )
 
     def test_update(self):
-        """Test update method."""
         seq_len = 3
 
         # Create test key and value tensors
@@ -175,7 +164,6 @@ class TestDynamicKVBlock(unittest.TestCase):
         self.assertTrue(torch.allclose(v_cache2[:, :, seq_len:, :], v2))
 
     def test_context_length_limit(self):
-        """Test that cache is truncated when it exceeds context_length."""
         # Create test keys and values that will exceed context_length when combined
         seq_len = self.context_length // 2 + 1
 
@@ -234,10 +222,7 @@ class TestDynamicKVBlock(unittest.TestCase):
 
 
 class TestKVCache(unittest.TestCase):
-    """Test cases for the KVCache class."""
-
     def setUp(self):
-        """Set up test parameters."""
         self.batch_size = 2
         self.num_layers = 3
         self.embedding_dimensions = 32
@@ -255,7 +240,6 @@ class TestKVCache(unittest.TestCase):
         self.kv_cache = KVCache(self.decoder, self.batch_size, self.context_length)
 
     def test_init(self):
-        """Test initialization of KVCache."""
         # Check that kv_blocks has the correct number of blocks
         self.assertEqual(len(self.kv_cache.kv_blocks), self.num_layers)
 
@@ -267,7 +251,6 @@ class TestKVCache(unittest.TestCase):
             self.assertEqual(block.context_length, self.context_length)
 
     def test_iteration(self):
-        """Test that KVCache is iterable."""
         blocks = list(self.kv_cache)
 
         # Check that iteration yields all blocks
