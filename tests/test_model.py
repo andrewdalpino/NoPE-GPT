@@ -1,8 +1,9 @@
 import unittest
+
 from unittest.mock import MagicMock, patch
+
 import torch
 import torch.nn as nn
-from torch import Tensor
 
 from src.nope_gpt.model import (
     NoPEGPT,
@@ -14,7 +15,6 @@ from src.nope_gpt.model import (
     LoRA,
 )
 from src.nope_gpt.caching import KVCache, DynamicKVBlock
-from src.nope_gpt.search import Candidate
 
 
 class TestLoRA(unittest.TestCase):

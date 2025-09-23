@@ -1,4 +1,5 @@
 import unittest
+
 from collections import deque
 
 from src.nope_gpt.memory import BufferWindowMemory
