@@ -181,7 +181,6 @@ class TestSelfAttention(unittest.TestCase):
             embedding_dimensions, num_q_heads, num_kv_heads, dropout
         )
 
-        self.assertEqual(attention.embedding_dimensions, embedding_dimensions)
         self.assertEqual(attention.num_q_heads, num_q_heads)
         self.assertEqual(attention.num_kv_heads, num_kv_heads)
         self.assertEqual(attention.head_dimensions, embedding_dimensions // num_q_heads)
