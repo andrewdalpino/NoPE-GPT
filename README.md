@@ -31,13 +31,13 @@ This first example we'll show how to load a pretrained base model from HuggingFa
 
 ```python
 from nope_gpt.model import NoPEGPT
-from nope_gpt.tokenization import ChatTokenizer
+from nope_gpt.tokenization import BaseTokenizer
 
 model_name = "andrewdalpino/NoPE-GPT-400M-Base"
 
 model = NoPEGPT.from_pretrained(model_name)
 
-tokenizer = ChatTokenizer.from_pretrained(model_name)
+tokenizer = BaseTokenizer.from_pretrained(model_name)
 ```
 
 Then, to generate text, provide a prompt, tokenize it, and iterate through the `generate()` method until the model outputs a stop token.
