@@ -267,10 +267,10 @@ To adjust the number of trainable LoRA parameters as well as the strength of the
 python fine-tune.py --rank=4 --alpha=2.0
 ```
 
-If you want to do quantization-aware training (QAT) to improve the accuracy of post-training quantization, you can temporarily replace the model weights with fake quantized and then fine-tune as normal. To adjust the quant group size set the `quant_group_size` argument like in the example below.
+To quantize the base model weights during fine-tuning (QLoRA) you can specify the `quantize_base_weights` argument and to adjust the quant group size set the `quant_group_size` argument like in the example below.
 
 ```
-python fine-tune.py --quantization_aware_training --quant_group_size=128
+python fine-tune.py --quantize_base_weights --quant_group_size=128
 ```
 
 In memory constrained environments, you can enable activation checkpointing to trade off compute for memory efficiency by recomputing the activations of each decoder block during backpropagation.
@@ -288,15 +288,15 @@ python fine-tune.py --activation_checkpointing
 | --max_tokens_per_sample | 4096 | int | The maximum number of tokens to pack into a single training sequence. |
 | --filter_long_samples | False | bool | Should we filter out samples that are longer than the max_tokens_per_sample? |
 | --num_dataset_processes | 8 | int | The number of processes to use for processing the dataset. |
-| --batch_size | 2 | int | The number of samples to pass through the network at a time. |
-| --gradient_accumulation_steps | 64 | int | The number of batches to pass through the network before updating the weights. |
+| --batch_size | 1 | int | The number of samples to pass through the network at a time. |
+| --gradient_accumulation_steps | 128 | int | The number of batches to pass through the network before updating the weights. |
 | --num_epochs | 2 | int | The number of epochs to train for. |
 | --learning_rate | 1e-2 | float | The learning rate of the Adafactor optimizer. |
 | --low_memory_optimizer | False | bool | Should the optimizer reduce its memory consumption in exchange for a slightly slower runtime? |
 | --max_gradient_norm | 1.0 | float | Clip gradients above this threshold norm before stepping. |
 | --rank | 8 | int | The rank of the LoRA decomposition matrices. |
 | --alpha | 1.0 | float | The strength of the LoRA signal. |
-| --quantization_aware_training | False | bool | Should replace the model weights with fake quantized tensors? |
+| --freeze_token_embeddings | False | bool | Should we freeze the weights of the token embeddings? |
 | --activation_checkpointing | False | bool | Should we use activation checkpointing? This will reduce drastically memory utilization during training at the cost of needing to recompute the forward pass. |
 | --eval_interval | 1 | int | Evaluate the model after this many epochs on the testing set. |
 | --num_eval_samples | 2048 | int | The number of hold-out samples to use for validation during training. |

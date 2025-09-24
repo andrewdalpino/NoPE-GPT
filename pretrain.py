@@ -152,7 +152,9 @@ def main():
 
     logger = SummaryWriter(args.run_dir_path)
 
-    tokenizer = BaseTokenizer.from_tiktoken(args.token_encoding)
+    tokenizer_args = {"name": args.token_encoding}
+
+    tokenizer = BaseTokenizer.from_tiktoken(**tokenizer_args)
 
     dataset = Fineweb(
         root_path=args.dataset_path,
@@ -233,9 +235,7 @@ def main():
     step = 1
 
     if args.resume:
-        checkpoint = torch.load(
-            args.checkpoint_path, map_location=args.device, weights_only=False
-        )
+        checkpoint = torch.load(args.checkpoint_path, map_location=args.device)
 
         train_loader.load_state_dict(checkpoint["train_loader"])
 
@@ -346,7 +346,7 @@ def main():
             if IS_MASTER and step % args.checkpoint_interval == 0:
                 checkpoint = {
                     "step": step,
-                    "tokenizer": tokenizer,
+                    "tokenizer_args": tokenizer_args,
                     "train_loader": train_loader.state_dict(),
                     "model_args": model_args,
                     "model": model.state_dict(),

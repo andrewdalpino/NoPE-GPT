@@ -1,6 +1,6 @@
 import random
-from functools import partial
 
+from functools import partial
 from argparse import ArgumentParser
 
 import torch
@@ -17,7 +17,8 @@ from torch.utils.tensorboard import SummaryWriter
 from torchmetrics.text import Perplexity
 
 from src.nope_gpt.model import NoPEGPT
-from src.nope_gpt.tokenization import ChatTokenizer
+from src.nope_gpt.tokenization import BaseTokenizer, ChatTokenizer
+
 from data import SmolTalk, UltraFeedbackSFT, pad_collate, IGNORE_INDEX
 
 from tqdm import tqdm
@@ -37,7 +38,7 @@ def main():
     parser.add_argument("--max_tokens_per_sample", default=4096, type=int)
     parser.add_argument("--filter_long_samples", action="store_true")
     parser.add_argument("--num_dataset_processes", default=8, type=int)
-    parser.add_argument("--batch_size", default=2, type=int)
+    parser.add_argument("--batch_size", default=1, type=int)
     parser.add_argument("--gradient_accumulation_steps", default=128, type=int)
     parser.add_argument("--learning_rate", default=1e-2, type=float)
     parser.add_argument("--low_memory_optimizer", action="store_true")
@@ -45,8 +46,7 @@ def main():
     parser.add_argument("--num_epochs", default=2, type=int)
     parser.add_argument("--lora_rank", default=8, type=int)
     parser.add_argument("--lora_alpha", default=1.0, type=float)
-    parser.add_argument("--quantization_aware_training", action="store_trues")
-    parser.add_argument("--quant_group_size", default=128, type=int)
+    parser.add_argument("--freeze_token_embeddings", action="store_true")
     parser.add_argument("--activation_checkpointing", action="store_true")
     parser.add_argument("--eval_interval", default=1, type=int)
     parser.add_argument("--num_eval_samples", default=2048, type=int)
@@ -113,11 +113,13 @@ def main():
 
     logger = SummaryWriter(args.run_dir_path)
 
-    checkpoint = torch.load(
-        args.base_checkpoint_path, map_location=args.device, weights_only=False
-    )
+    checkpoint = torch.load(args.base_checkpoint_path, map_location=args.device)
 
-    tokenizer = ChatTokenizer(checkpoint["tokenizer"])
+    tokenizer_args = checkpoint["tokenizer_args"]
+
+    tokenizer = BaseTokenizer.from_tiktoken(**tokenizer_args)
+
+    tokenizer = ChatTokenizer(tokenizer)
 
     datasets = []
 
@@ -180,7 +182,8 @@ def main():
 
     model.freeze_model_parameters()
 
-    model.unfreeze_token_embeddings()
+    if not args.freeze_token_embeddings:
+        model.unfreeze_token_embeddings()
 
     model.resize_token_embeddings(tokenizer.vocabulary_size)
 
@@ -192,9 +195,6 @@ def main():
     model.add_lora_adapters(**lora_args)
 
     print(f"Model has {model.num_trainable_params:,} trainable parameters")
-
-    if args.quantization_aware_training:
-        model.add_fake_quantized_tensors(args.quant_group_size)
 
     if args.activation_checkpointing:
         model.decoder.enable_activation_checkpointing()
@@ -210,9 +210,7 @@ def main():
     starting_epoch = 1
 
     if args.resume:
-        checkpoint = torch.load(
-            args.checkpoint_path, map_location=args.device, weights_only=False
-        )
+        checkpoint = torch.load(args.checkpoint_path, map_location=args.device)
 
         model.load_state_dict(checkpoint["model"])
         optimizer.load_state_dict(checkpoint["optimizer"])
@@ -300,7 +298,7 @@ def main():
         if epoch % args.checkpoint_interval == 0:
             checkpoint = {
                 "epoch": epoch,
-                "tokenizer": tokenizer,
+                "tokenizer_args": tokenizer_args,
                 "model_args": model_args,
                 "lora_args": lora_args,
                 "model": model.state_dict(),

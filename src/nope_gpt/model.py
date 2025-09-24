@@ -22,14 +22,6 @@ from torch.nn.functional import scaled_dot_product_attention, softmax, log_softm
 from torch.nn.utils.parametrize import register_parametrization, remove_parametrizations
 from torch.utils.checkpoint import checkpoint as torch_checkpoint
 
-from torchao.quantization import Int8WeightOnlyConfig, quantize_
-
-from torchao.quantization.qat import (
-    FakeQuantizeConfig,
-    IntXQuantizationAwareTrainingConfig,
-    FromIntXQuantizationAwareTrainingConfig,
-)
-
 from huggingface_hub import PyTorchModelHubMixin
 
 from src.nope_gpt.caching import KVCache, DynamicKVBlock
@@ -147,33 +139,6 @@ class NoPEGPT(Module, PyTorchModelHubMixin):
 
             for name in lora_params:
                 remove_parametrizations(module, name)
-
-    def add_fake_quantized_tensors(self, group_size: int) -> None:
-        """Prepare the model for quantization-aware training."""
-
-        assert group_size % self.embedding_dimensions == 0, "Invalid quant group size."
-
-        weight_config = FakeQuantizeConfig(torch.int8, group_size=group_size)
-
-        config = IntXQuantizationAwareTrainingConfig(weight_config=weight_config)
-
-        quantize_(self, config)
-
-    def remove_fake_quantized_tensors(self) -> None:
-        """Convert fake quantized tensors back to regular tensors."""
-
-        config = FromIntXQuantizationAwareTrainingConfig()
-
-        quantize_(self, config)
-
-    def quantize_weights(self, group_size: int) -> None:
-        """Quantize the weights of the model."""
-
-        assert group_size % self.embedding_dimensions == 0, "Invalid quant group size."
-
-        config = Int8WeightOnlyConfig(group_size=group_size)
-
-        quantize_(self, config)
 
     def forward(self, x: Tensor) -> Tensor:
         """A forward pass optimized for batch training."""
