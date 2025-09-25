@@ -1,8 +1,8 @@
 from math import sqrt
 from functools import partial
 from typing import Self
-from collections.abc import Generator
 from collections import deque
+from collections.abc import Generator
 
 import torch
 
@@ -63,7 +63,7 @@ class NoPEGPT(Module, PyTorchModelHubMixin):
 
         token_classifier = TokenClassifier(embedding_dimensions, vocabulary_size)
 
-        token_classifier.linear.weight = token_embeddings.weight  # Tie weights
+        token_classifier.tie_weights(token_embeddings)
 
         self.vocabulary_size = vocabulary_size
         self.embedding_dimensions = embedding_dimensions
@@ -90,11 +90,9 @@ class NoPEGPT(Module, PyTorchModelHubMixin):
     def resize_token_embeddings(self, new_vocabulary_size: int) -> None:
         """Resize the token embeddings to a new vocabulary size."""
 
-        device = self.token_embeddings.weight.device
+        new_embeddings = Embedding(new_vocabulary_size, self.embedding_dimensions)
 
-        new_embeddings = Embedding(new_vocabulary_size, self.embedding_dimensions).to(
-            device
-        )
+        new_embeddings.to(self.token_embeddings.weight.device)
 
         num_tokens_to_copy = min(new_vocabulary_size, self.vocabulary_size)
 
@@ -105,17 +103,16 @@ class NoPEGPT(Module, PyTorchModelHubMixin):
         # Initialize new embeddings with a kaiming normal distribution.
         for i in range(num_tokens_to_copy, new_vocabulary_size):
             tensor = torch.randn(self.embedding_dimensions)
+
             tensor /= sqrt(self.embedding_dimensions)
 
             new_embeddings.weight[i] = tensor
 
-        self.token_embeddings.weight = new_embeddings.weight
-        self.token_embeddings.num_embeddings = new_embeddings.num_embeddings
-
         # Retie weights
-        self.token_classifier.linear.weight = self.token_embeddings.weight
+        self.token_classifier.tie_weights(new_embeddings)
 
         self.vocabulary_size = new_vocabulary_size
+        self.token_embeddings = new_embeddings
 
     def add_lora_adapters(self, rank: int, alpha: float) -> None:
         """Reparameterize the weights of the model using LoRA adapters."""
@@ -616,6 +613,15 @@ class TokenClassifier(Module):
 
         self.linear = Linear(embedding_dimensions, vocabulary_size, bias=False)
 
+    def tie_weights(self, token_embeddings: Embedding) -> None:
+        """Tie the weights of the token classifier to the token embeddings."""
+
+        assert (
+            self.linear.weight.shape == token_embeddings.weight.shape
+        ), "Token embeddings must have the same shape as token classifier."
+
+        self.linear.weight = token_embeddings.weight
+
     def forward(self, x: Tensor) -> Tensor:
         z = self.norm.forward(x)
         z = self.linear.forward(z)
@@ -644,7 +650,7 @@ class LoRA(Module):
         self.lora_a = Parameter(lora_a)
         self.lora_b = Parameter(lora_b)
 
-        self.alpha: float = alpha
+        self.alpha = alpha
 
     def forward(self, weight: Tensor) -> Tensor:
         z = self.lora_b @ self.lora_a

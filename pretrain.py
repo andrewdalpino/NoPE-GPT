@@ -202,11 +202,10 @@ def main():
 
     model = NoPEGPT(**model_args)
 
+    model = torch.compile(model)
+
     if args.activation_checkpointing:
         model.decoder.enable_activation_checkpointing()
-
-    print("Compiling model")
-    model = torch.compile(model)
 
     if IS_DDP:
         match args.ddp_sharding_level:
@@ -255,8 +254,6 @@ def main():
     perplexity_metric = Perplexity(ignore_index=IGNORE_INDEX).to(args.device)
 
     register_signal_handlers()
-
-    print("Pretraining ...")
 
     new_progress_bar = partial(
         tqdm,
