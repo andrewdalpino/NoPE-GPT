@@ -329,3 +329,4 @@ Then navigate to the dashboard using your favorite web browser.
 >- B. Zhang, et al. Root Mean Square Layer Normalization. 33rd Conference on Neural Information Processing Systems, NeurIPS 2019.
 >- J. Kaplan, et al. Scaling Laws for Neural Language Models, OpenAI, 2020.
 >- J. Hoffman, et al. Training Compute-Optimal Large Language Models, Deep Mind, 2022.
+>- J. Ainslie, et al. GQA: Training Generalized Multi-Query Transformer Models from Multi-Head Checkpoints, Google Research, 2023.
