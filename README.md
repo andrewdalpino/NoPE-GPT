@@ -222,6 +222,7 @@ torchrun --standalone --nnodes=1 --nproc-per-node=8 pretrain.py --batch_size=16 
 | --tokens_per_sample | 4096 | int | The number of tokens to pack into a single training sequence. This is sometimes called the block size or context length. |
 | --max_steps | 10000 | int | The maximum number of steps to take for pretraining. |
 | --learning_rate | 1e-2 | float | The learning rate of the Adafactor optimizer. |
+| --anneal_learning_rate | False | bool | Should we linearly decay the learning rate to zero as the step reaches `max_steps`? |
 | --low_memory_optimizer | False | bool | Should the optimizer reduce its memory consumption in exchange for a slightly slower runtime? |
 | --max_gradient_norm | 10.0 | float | Clip gradients above this threshold norm before stepping. |
 | --embedding_dimensions | 1024 | int | The dimensionality of the token embeddings. |

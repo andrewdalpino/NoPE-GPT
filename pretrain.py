@@ -14,6 +14,7 @@ from torch.utils.data import DataLoader, SequentialSampler
 from torch.utils.data.distributed import DistributedSampler
 from torch.nn import CrossEntropyLoss
 from torch.optim import Adafactor
+from torch.optim.lr_scheduler import ConstantLR, LinearLR
 from torch.amp import autocast
 from torch.cuda import set_device, is_available as cuda_is_available, is_bf16_supported
 from torch.nn.utils import clip_grad_norm_
@@ -66,6 +67,7 @@ def main():
     parser.add_argument("--tokens_per_sample", default=4096, type=int)
     parser.add_argument("--max_steps", default=20000, type=int)
     parser.add_argument("--learning_rate", default=1e-2, type=float)
+    parser.add_argument("--anneal_learning_rate", action="store_true")
     parser.add_argument("--low_memory_optimizer", action="store_true")
     parser.add_argument("--max_gradient_norm", default=10.0, type=float)
     parser.add_argument("--embedding_dimensions", default=1024, type=int)
@@ -245,6 +247,15 @@ def main():
 
         print("Previous checkpoint resumed successfully")
 
+    if args.anneal_learning_rate:
+        total_iters = args.max_steps - step
+
+        scheduler = LinearLR(
+            optimizer, start_factor=1.0, end_factor=0.0, total_iters=total_iters
+        )
+    else:
+        scheduler = ConstantLR(optimizer, factor=1.0)
+
     model.train()
 
     print(f"Model has {model.num_trainable_params:,} trainable parameters")
@@ -300,6 +311,8 @@ def main():
 
             optimizer.zero_grad(set_to_none=True)
 
+            scheduler.step()
+
             progress_bar.close()
 
             if IS_MASTER:
@@ -348,6 +361,7 @@ def main():
                     "model_args": model_args,
                     "model": model.state_dict(),
                     "optimizer": optimizer.state_dict(),
+                    "scheduler": scheduler.state_dict(),
                 }
 
                 torch.save(checkpoint, args.checkpoint_path)
