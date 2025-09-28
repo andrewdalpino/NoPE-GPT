@@ -461,9 +461,9 @@ class SelfAttention(Module):
             embedding_dimensions % num_q_heads == 0
         ), "Embedding dimensions must be divisible by the number of query heads."
 
-        head_dimensions: int = embedding_dimensions // num_q_heads
+        head_dimensions = embedding_dimensions // num_q_heads
 
-        kv_dimensions: int = num_kv_heads * head_dimensions
+        kv_dimensions = num_kv_heads * head_dimensions
 
         self.q_proj = Linear(embedding_dimensions, embedding_dimensions, bias=False)
         self.k_proj = Linear(embedding_dimensions, kv_dimensions, bias=False)
@@ -471,10 +471,11 @@ class SelfAttention(Module):
 
         self.out_proj = Linear(embedding_dimensions, embedding_dimensions, bias=False)
 
-        scale: float = 1.0 / sqrt(head_dimensions)
+        scale = 1.0 / sqrt(head_dimensions)
 
-        is_gqa: bool = num_q_heads > num_kv_heads
+        is_gqa = num_q_heads > num_kv_heads
 
+        self.embedding_dimensions = embedding_dimensions
         self.num_q_heads = num_q_heads
         self.num_kv_heads = num_kv_heads
         self.head_dimensions = head_dimensions

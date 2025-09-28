@@ -9,6 +9,7 @@ from torch.cuda import is_available as cuda_is_available
 
 from colored import fore_rgb, style
 
+from src.nope_gpt.tokenization import BaseTokenizer
 from src.nope_gpt.model import NoPEGPT
 
 WHITE = (255, 255, 255)
@@ -46,7 +47,7 @@ def main():
         args.checkpoint_path, map_location=args.device, weights_only=False
     )
 
-    tokenizer = checkpoint["tokenizer"]
+    tokenizer = BaseTokenizer.from_tiktoken(**checkpoint["tokenizer_args"])
 
     model = NoPEGPT(**checkpoint["model_args"])
 
