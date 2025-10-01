@@ -568,7 +568,7 @@ class InvertedBottleneck(Module):
 
         assert hidden_ratio in {1, 2, 4}, "Hidden ratio must be either 1, 2, or 4."
 
-        hidden_dimensions: int = hidden_ratio * embedding_dimensions
+        hidden_dimensions = hidden_ratio * embedding_dimensions
 
         self.linear1 = Linear(embedding_dimensions, hidden_dimensions, bias=False)
         self.linear2 = Linear(hidden_dimensions, embedding_dimensions, bias=False)

@@ -6,7 +6,7 @@ NoPE GPT is a generative pretrained Transformer-style (GPT) language model with 
 
 - **No positional embeddings (NoPE)**: NoPE GPT aims to be a more parsimonious model by completely removing positional embeddings from the architecture allowing the context length to vary without complex model surgery. Despite having no positional embeddings, NoPE GPT performs better at context length generalization than the best relative embeddings (ALiBi, RoPE, T5) offering good performance even when operating within 2X the trained context window.
 
-- **Fast and memory-efficient**: NoPE GPT employs a number of training and inference-time optimizations such as Group Query Attention, KV-caching, quantization-aware fine-tuning (QAT), activation checkpointing, and fully-sharded data parallel (FSDP) pretraining. As such, you can train and infer on relatively modest hardware.
+- **Fast and memory-efficient**: NoPE GPT employs a number of training and inference-time optimizations such as Group Query Attention (GQA), Flash Attention, KV-caching, activation checkpointing, and fully-sharded data parallel (FSDP) pretraining. As such, you can train and infer on relatively modest hardware.
 
 - **Fully Open-source**: Unlike closed-source LLMs, NoPE GPT provides both the model weights *and* the source code to train, fine-tune, export, and generate text from the model using your own hardware.
 
