@@ -332,3 +332,4 @@ Then navigate to the dashboard using your favorite web browser.
 >- J. Kaplan, et al. Scaling Laws for Neural Language Models, OpenAI, 2020.
 >- J. Hoffman, et al. Training Compute-Optimal Large Language Models, Deep Mind, 2022.
 >- J. Ainslie, et al. GQA: Training Generalized Multi-Query Transformer Models from Multi-Head Checkpoints, Google Research, 2023.
+>- S. Bergsma, et al. Straight to Zero: Why Linearly Decaying the Learning Rate to Zero Works Best for LLMs, ICLR, 2025.
