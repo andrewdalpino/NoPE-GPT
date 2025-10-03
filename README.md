@@ -222,7 +222,7 @@ torchrun --standalone --nnodes=1 --nproc-per-node=8 pretrain.py --batch_size=16 
 | --tokens_per_sample | 4096 | int | The number of tokens to pack into a single training sequence. This is sometimes called the block size or context length. |
 | --max_steps | 10000 | int | The maximum number of steps to take for pretraining. |
 | --learning_rate | 1e-2 | float | The learning rate of the Adafactor optimizer. |
-| --anneal_learning_rate | False | bool | Should we linearly decay the learning rate to zero as the step reaches `max_steps`? |
+| --anneal_learning_rate | False | bool | Should we linearly decay the learning rate to zero as the step approaches `max_steps`? |
 | --low_memory_optimizer | False | bool | Should the optimizer reduce its memory consumption in exchange for a slightly slower runtime? |
 | --max_gradient_norm | 10.0 | float | Clip gradients above this threshold norm before stepping. |
 | --embedding_dimensions | 1024 | int | The dimensionality of the token embeddings. |
@@ -238,6 +238,7 @@ torchrun --standalone --nnodes=1 --nproc-per-node=8 pretrain.py --batch_size=16 
 | --checkpoint_interval | 100 | int | Save the model checkpoint to disk every this many epochs. |
 | --checkpoint_path | "./checkpoints/checkpoint.pt" | str | The path to the base checkpoint file on disk. |
 | --resume | False | bool | Should we resume training from the last checkpoint? |
+| --resume_scheduler | False | bool | Should we resume the learning rate schedule from the last checkpoint? |
 | --run_dir_path | "./runs" | str | The path to the TensorBoard run directory for this training session. |
 | --device | "cpu" | str | The device to run the training on ex `cuda`, `cuda:0`, `mps`, `cpu`. |
 | --seed | None | int | The seed for the random number generator. |
