@@ -10,7 +10,8 @@ from torch.cuda import is_available as cuda_is_available
 from colored import fore_rgb, style
 
 from src.nope_gpt.model import NoPEGPT
-from nope_gpt.memory import BufferWindowMemory
+from src.nope_gpt.tokenization import BaseTokenizer, ChatTokenizer
+from src.nope_gpt.memory import BufferWindowMemory
 
 DEFAULT_SYSTEM_MESSAGE = (
     "You're a helpful AI assistant named NoPE GPT. "
@@ -52,7 +53,9 @@ def main():
         args.checkpoint_path, map_location=args.device, weights_only=False
     )
 
-    tokenizer = checkpoint["tokenizer"]
+    tokenizer = BaseTokenizer.from_tiktoken(**checkpoint["tokenizer_args"])
+
+    tokenizer = ChatTokenizer(tokenizer)
 
     model = NoPEGPT(**checkpoint["model_args"])
 

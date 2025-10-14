@@ -147,6 +147,12 @@ class ChatTokenizer(ModelHubMixin):
     RESPONSE_HEADER = "<|im_start|>assistant\n"
 
     @classmethod
+    def from_tiktoken(cls, name: str) -> Self:
+        """Instantiate a tokenizer from a pretrained tiktoken tokenizer."""
+
+        return cls(get_encoding(name))
+
+    @classmethod
     def _from_pretrained(
         cls,
         *,
