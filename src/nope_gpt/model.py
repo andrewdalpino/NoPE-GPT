@@ -617,10 +617,6 @@ class TokenClassifier(Module):
     def tie_weights(self, token_embeddings: Embedding) -> None:
         """Tie the weights of the token classifier to the token embeddings."""
 
-        assert (
-            self.linear.weight.shape == token_embeddings.weight.shape
-        ), "Token embeddings must have the same shape as token classifier."
-
         self.linear.weight = token_embeddings.weight
 
     def forward(self, x: Tensor) -> Tensor:
