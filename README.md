@@ -287,17 +287,17 @@ python fine-tune.py --activation_checkpointing
 |---|---|---|---|
 | --base_checkpoint_path | None | string | The path to the base model checkpoint on disk. |
 | --dataset_subset | "all" | str | A comma-separated list of subsets of the dataset to train on. Options are `all`, `apigen-80k`, `everyday-conversations`, `explore-instruct-rewriting`, `longalign`, `metamathqa-50k`, `numina-cot-100k`, `openhermes-100k`, `self-oss-instruct`, `smol-constraints`, `smol-magpie-ultra`, `smol-rewrite`, `smol-summarize`, `systemchats-30k`, and `ultra-feedback`. |
-| --max_tokens_per_sample | 4096 | int | The maximum number of tokens to pack into a single training sequence. |
+| --max_tokens_per_sample | 8192 | int | The maximum number of tokens to pack into a single training sequence. |
 | --filter_long_samples | False | bool | Should we filter out samples that are longer than the max_tokens_per_sample? |
 | --num_dataset_processes | 8 | int | The number of processes to use for processing the dataset. |
 | --batch_size | 1 | int | The number of samples to pass through the network at a time. |
 | --gradient_accumulation_steps | 128 | int | The number of batches to pass through the network before updating the weights. |
 | --num_epochs | 2 | int | The number of epochs to train for. |
-| --learning_rate | 1e-2 | float | The learning rate of the Adafactor optimizer. |
+| --learning_rate | 1e-4 | float | The learning rate of the Adafactor optimizer. |
 | --low_memory_optimizer | False | bool | Should the optimizer reduce its memory consumption in exchange for a slightly slower runtime? |
 | --max_gradient_norm | 1.0 | float | Clip gradients above this threshold norm before stepping. |
 | --rank | 8 | int | The rank of the LoRA decomposition matrices. |
-| --alpha | 1.0 | float | The strength of the LoRA signal. |
+| --alpha | 2.0 | float | The strength of the LoRA signal. |
 | --freeze_token_embeddings | False | bool | Should we freeze the weights of the token embeddings? |
 | --activation_checkpointing | False | bool | Should we use activation checkpointing? This will reduce drastically memory utilization during training at the cost of needing to recompute the forward pass. |
 | --eval_interval | 1 | int | Evaluate the model after this many epochs on the testing set. |
