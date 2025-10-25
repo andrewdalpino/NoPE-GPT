@@ -84,7 +84,6 @@ def main():
         "--checkpoint_path", default="./checkpoints/checkpoint.pt", type=str
     )
     parser.add_argument("--resume", action="store_true")
-    parser.add_argument("--resume_scheduler", action="store_true")
     parser.add_argument("--run_dir_path", default="./runs", type=str)
     parser.add_argument("--device", default="cpu", type=str)
     parser.add_argument("--seed", default=None, type=int)
@@ -234,15 +233,6 @@ def main():
         foreach=not args.low_memory_optimizer,
     )
 
-    if args.anneal_learning_rate:
-        total_iters = args.max_steps - step
-
-        scheduler = LinearLR(
-            optimizer, start_factor=1.0, end_factor=0.0, total_iters=total_iters
-        )
-    else:
-        scheduler = ConstantLR(optimizer, factor=1.0)
-
     step = 1
 
     if args.resume:
@@ -253,12 +243,18 @@ def main():
         model.load_state_dict(checkpoint["model"])
         optimizer.load_state_dict(checkpoint["optimizer"])
 
-        if args.resume_scheduler:
-            scheduler.load_state_dict(checkpoint["scheduler"])
-
         step += checkpoint["step"]
 
         print("Previous checkpoint resumed successfully")
+
+    if args.anneal_learning_rate:
+        total_iters = args.max_steps - step
+
+        scheduler = LinearLR(
+            optimizer, start_factor=1.0, end_factor=0.0, total_iters=total_iters
+        )
+    else:
+        scheduler = ConstantLR(optimizer, factor=1.0)
 
     model.train()
 
