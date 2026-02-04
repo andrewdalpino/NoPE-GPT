@@ -8,7 +8,7 @@ import torch
 from torch.utils.data import ConcatDataset, DataLoader
 from torch.nn import CrossEntropyLoss
 from torch.optim import Adafactor
-from torch.amp import autocast
+from torch.amp.autocast_mode import autocast
 from torch.cuda import is_available as cuda_is_available, is_bf16_supported
 from torch.nn.utils import clip_grad_norm_
 from torch.utils.data import random_split

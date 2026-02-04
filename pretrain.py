@@ -15,7 +15,7 @@ from torch.utils.data.distributed import DistributedSampler
 from torch.nn import CrossEntropyLoss
 from torch.optim import Adafactor
 from torch.optim.lr_scheduler import ConstantLR, LinearLR
-from torch.amp import autocast
+from torch.amp.autocast_mode import autocast
 from torch.cuda import set_device, is_available as cuda_is_available, is_bf16_supported
 from torch.nn.utils import clip_grad_norm_
 from torch.distributed import init_process_group, destroy_process_group

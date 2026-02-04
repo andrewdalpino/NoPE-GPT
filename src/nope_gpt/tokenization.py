@@ -27,6 +27,7 @@ class BaseTokenizer(ModelHubMixin):
         resume_download: Optional[bool],
         local_files_only: bool,
         token: Union[str, bool, None],
+        **model_kwargs: dict,
     ):
         config_path = hf_hub_download(
             repo_id=model_id,
@@ -150,7 +151,7 @@ class ChatTokenizer(ModelHubMixin):
     def from_tiktoken(cls, name: str) -> Self:
         """Instantiate a tokenizer from a pretrained tiktoken tokenizer."""
 
-        return cls(get_encoding(name))
+        return cls(BaseTokenizer(get_encoding(name)))
 
     @classmethod
     def _from_pretrained(
@@ -164,6 +165,7 @@ class ChatTokenizer(ModelHubMixin):
         resume_download: Optional[bool],
         local_files_only: bool,
         token: Union[str, bool, None],
+        **model_kwargs: dict,
     ):
         config_path = hf_hub_download(
             repo_id=model_id,
