@@ -313,7 +313,7 @@ class NoPEGPT(Module, PyTorchModelHubMixin):
 
             for log_probability, index in zip(log_probabilities, indices):
                 cumulative_log_probability = (
-                    candidate.cumulative_log_probability + log_probability
+                    candidate.cumulative_log_probability + log_probability.item()
                 )
 
                 tokens = torch.cat((candidate.tokens, index.unsqueeze(0)))
